@@ -1,0 +1,5 @@
+{
+  "name": "VeloRoute Manager",
+  "description": "Advanced cycling route manager with GPX analysis, categorization, and interactive map visualization.",
+  "requestFramePermissions": []
+}
