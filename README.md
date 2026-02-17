@@ -26,7 +26,7 @@
 
 ### 数据持久化
 
-- **Local-First**：基于 Electron 的本地文件存储，数据保存在用户的本地系统中 (storage.json)，无需依赖云端数据库。
+- **Local-First**：基于 Electron 的本地文件存储，数据保存在用户的本地系统中 (storage.json)，无需依赖云端数据库。储存路径：C:\Users\<你的用户名>\AppData\Roaming\veloroute-manager\storage.json
 - **备份与恢复**：内置 JSON 格式的完整数据导出与导入功能，防止数据丢失。
 
 ## 技术栈
