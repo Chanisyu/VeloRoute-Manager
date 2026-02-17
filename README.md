@@ -41,6 +41,12 @@
 
 ## 快速开始
 
+请前往 [Releases 页面](https://github.com/chanisyu/VeloRoute-Manager/releases) 下载最新版本：
+- **安装版:** 下载 `.exe` 直接安装。
+- **便携版:** 下载 `.zip` 包，解压后运行 `.exe` 即可。
+
+## 开始
+
 **本软件仅支持window环境下运行。**
 
 ### 前置要求
