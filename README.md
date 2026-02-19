@@ -6,7 +6,7 @@
 ## 总而言之就是你可以使用该软件方便、直观地查看、呈现、管理你的骑行路线。
 
 <p align="center">
-  <img src="./Screenshot/屏幕截图 2026-02-19 124401.png" width="50%" />
+  <img src="./Screenshot/屏幕截图 2026-02-19 124401.png" width="100%" />
 </p>
 
 该应用基于 **Angular (v18+)** 和 **Electron** 构建，采用 **Zoneless** 架构以实现高性能渲染，并结合 **Mapbox GL JS** 提供令人惊叹的 3D 地形可视化体验。
