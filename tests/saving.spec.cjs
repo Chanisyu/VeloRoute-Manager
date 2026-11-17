@@ -64,6 +64,9 @@ test('浏览器保存失败显示错误，重试后保存最新内容', async ({
   await page.getByPlaceholder('请输入文件夹名称').fill('未保存文件夹');
   await page.getByRole('button', { name: '新建', exact: true }).click();
   await expect(page.getByLabel('保存状态')).toContainText('保存失败');
+  // 超过普通反馈的停留与渐隐时长后，失败原因和重试入口仍应可见。
+  await page.waitForTimeout(3_500);
+  await expect(page.getByRole('button', { name: '重试保存', exact: true })).toBeVisible();
   expect(await page.evaluate(() => localStorage.getItem('velo_data'))).toBeNull();
   await page.evaluate(() => { window.__failSaves = false; });
   await page.getByRole('button', { name: '重试保存', exact: true }).click();
@@ -93,6 +96,9 @@ test('在途写入期间继续编辑，旧请求完成后只保存最新快照',
   await page.getByPlaceholder('请输入文件夹名称').fill('第一次写入');
   await page.getByRole('button', { name: '新建', exact: true }).click();
   await expect(page.getByLabel('保存状态')).toContainText('正在保存');
+  // 真实写入尚未完成时，即使超过三秒也不能隐藏正在保存的反馈。
+  await page.waitForTimeout(3_500);
+  await expect(page.getByLabel('保存状态')).toBeVisible();
   await page.getByPlaceholder('请输入文件夹名称').fill('最新修改');
   await page.getByRole('button', { name: '新建', exact: true }).click();
   await expect(page.getByLabel('保存状态')).toContainText('等待保存');
@@ -100,6 +106,39 @@ test('在途写入期间继续编辑，旧请求完成后只保存最新快照',
   await expect(page.getByLabel('保存状态')).toContainText('已保存');
   expect(await page.evaluate(() => window.__writes.length)).toBe(2);
   expect(await page.evaluate(() => window.__writes.at(-1).folders.at(-1).name)).toBe('最新修改');
+});
+
+test('保存反馈自动渐隐，连续保存重新计时，隐藏后再次修改可重新显示', async ({ page }) => {
+  await page.goto('/');
+  await page.getByRole('button', { name: '暂时跳过' }).click();
+  const status = page.getByLabel('保存状态');
+  await expect(status).toBeVisible();
+  await expect(status).toBeHidden({ timeout: 5_000 });
+
+  await page.getByRole('button', { name: '路线管理与 GPX 导入' }).click();
+  const input = page.getByPlaceholder('请输入文件夹名称');
+  const add = page.getByRole('button', { name: '新建', exact: true });
+  await input.fill('首次保存');
+  await add.click();
+  await expect(status).toContainText('已保存');
+
+  // 接近上一轮消失时间时再保存；旧计时到期后，新反馈仍须完整显示。
+  await page.waitForTimeout(2_400);
+  await expect(status).toHaveCSS('opacity', '1');
+  await input.fill('连续保存');
+  await add.click();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).folders.at(-1).name)).toBe('连续保存');
+  await page.waitForTimeout(1_200);
+  await expect(status).toHaveCSS('opacity', '1');
+  await expect(status).toBeHidden({ timeout: 4_000 });
+  // 节点已移除，而非只变透明，避免继续遮挡地图或保留隐藏的可聚焦内容。
+  await expect(status).toHaveCount(0);
+
+  await input.fill('隐藏后再次保存');
+  await add.click();
+  await expect(status).toContainText('已保存');
+  await expect(status).toBeVisible();
+  await expect(status).toBeHidden({ timeout: 5_000 });
 });
 
 test('桌面旧数据迁移及非法备份拒绝，当前路线与文件不变', async () => {

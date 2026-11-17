@@ -1,7 +1,7 @@
-import { Component, inject } from '@angular/core';
+import { Component, effect, inject, signal } from '@angular/core';
 import { RouteService } from '../services/route.service';
 
-/** 在所有页面提供保存反馈；读取失败时阻止业务编辑并提供安全恢复入口。 */
+/** 在所有页面提供可渐隐的保存反馈；进行中和错误状态保持可见，读取失败时提供安全恢复入口。 */
 @Component({
   selector: 'app-storage-status', standalone: true,
   template: `
@@ -20,8 +20,10 @@ import { RouteService } from '../services/route.service';
           @if (service.operationError()) { <p role="alert" class="text-red-700">{{ service.operationError() }}</p> }
         </div>
       </section>
-    } @else {
-      <aside class="fixed bottom-3 right-3 z-[2000] max-w-sm bg-white/95 border rounded-lg shadow p-3 text-xs" aria-label="保存状态" aria-live="polite">
+    } @else if (statusVisible()) {
+      <aside class="fixed bottom-3 right-3 z-[2000] max-w-sm bg-white/95 border rounded-lg shadow p-3 text-xs transition-opacity duration-300 motion-reduce:transition-none"
+        [class.opacity-0]="fading()" [class.pointer-events-none]="fading()" [attr.aria-hidden]="fading() ? 'true' : null"
+        aria-label="保存状态" aria-live="polite">
         @if (service.restoring()) { <span>正在恢复备份…</span> }
         @else if (service.saveStatus() === 'saved') { <span>已保存</span> }
         @else if (service.saveStatus() === 'pending') { <span>等待保存…</span> }
@@ -38,6 +40,37 @@ import { RouteService } from '../services/route.service';
 })
 export class StorageStatusComponent {
   service = inject(RouteService);
+  statusVisible = signal(false);
+  fading = signal(false);
+
+  /**
+   * 将展示计时与业务保存状态分离；正常反馈停留三秒后渐隐，进行中或错误状态不定时隐藏。
+   * 无外部参数；新的状态、通知或组件销毁会清理旧计时，防止旧回调隐藏新反馈。
+   */
+  constructor() {
+    effect(onCleanup => {
+      const ready = this.service.initialized() && !this.service.loadError();
+      const status = this.service.saveStatus();
+      const restoring = this.service.restoring();
+      const operationError = this.service.operationError();
+      // 通知变化也应重新显示；普通恢复通知可能出现于保存状态仍为 saved 的情况下。
+      this.service.notice();
+
+      let fadeTimer: ReturnType<typeof setTimeout> | undefined;
+      let hideTimer: ReturnType<typeof setTimeout> | undefined;
+      onCleanup(() => { clearTimeout(fadeTimer); clearTimeout(hideTimer); });
+      this.statusVisible.set(ready);
+      this.fading.set(false);
+      if (!ready || status !== 'saved' || restoring || operationError) return;
+
+      fadeTimer = setTimeout(() => {
+        // 渐隐开始即停止拦截地图操作，并从辅助技术的可见区域移除。
+        this.fading.set(true);
+        // 与模板 duration-300 一致；移除节点后不留下透明遮挡或可聚焦元素。
+        hideTimer = setTimeout(() => this.statusVisible.set(false), 300);
+      }, 3_000);
+    }, { allowSignalWrites: true });
+  }
 
   /** @param {Event} event 用户主动选中的恢复文件。 @returns {Promise<void>} 完整校验及保存失败由状态区反馈。 */
   async restore(event: Event): Promise<void> {
