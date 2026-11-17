@@ -9,7 +9,7 @@ import { RouteService } from '../services/route.service';
   imports: [FormsModule],
   host: { 'class': 'block w-full h-full bg-slate-50' },
   template: `
-    <div class="max-w-4xl mx-auto p-8 h-full flex flex-col">
+    <div class="max-w-4xl mx-auto p-8 h-full flex flex-col overflow-y-auto">
       <!-- Header -->
       <div class="flex items-center gap-4 mb-8">
         <button aria-label="返回路线管理" title="返回路线管理" (click)="onBack.emit()" class="p-2 rounded-full hover:bg-slate-200 transition-colors">
@@ -18,7 +18,7 @@ import { RouteService } from '../services/route.service';
         <h1 class="text-3xl font-bold text-slate-800">设置</h1>
       </div>
 
-      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden shrink-0">
         
         <!-- Map Settings -->
         <div class="p-6 border-b border-slate-100">
@@ -66,6 +66,23 @@ import { RouteService } from '../services/route.service';
                 </div>
             </div>
         </div>
+
+        <!-- 原生折叠栏目默认关闭，支持点击与键盘展开，避免统计说明常驻路线详情。 -->
+        <details class="border-b border-slate-100 p-6" aria-label="统计计算说明">
+          <summary class="text-lg font-semibold text-slate-800 cursor-pointer focus-visible:outline-blue-600">路线统计与计算说明</summary>
+          <div class="mt-4 space-y-4 text-sm leading-6 text-slate-600">
+            <p>统计使用 GPX 文件中已有的高程，不随底图切换而改变，也不联网替换高程。原始轨迹点保持保留。</p>
+            <dl class="space-y-3">
+              <div><dt class="font-semibold text-slate-800">累计爬升与累计下降</dt><dd>各轨迹分段独立计算。以20米容差保留高程轮廓关键点，在前后各100米的窗口内平滑趋势残差，再分别累加上升和下降高差；最终取整数米。20米不是逐点高差扣除阈值。</dd></div>
+              <div><dt class="font-semibold text-slate-800">平均上坡坡度</dt><dd>未取整的累计爬升 ÷ 平滑后上升区间的水平里程 × 100%。按距离加权，无上坡时为0；不是全程净坡度或逐点坡度的算术平均。</dd></div>
+              <div><dt class="font-semibold text-slate-800">最大 100 米平均坡度</dt><dd>在连续采样区间内，以前后各50米的局部线性回归平滑高程，再求完整100米窗口的最大平均上坡坡度。窗口不跨轨迹分段，也不跨相邻点间距超过100米的区间。该值不表示短于100米的瞬时最陡坡度。</dd></div>
+            </dl>
+            <p class="rounded-lg bg-amber-50 p-3 text-amber-900">部分采样间距超过100米；累计升降为估算值，最大坡度仅采用有连续采样支撑的区间。</p>
+            <p>这里的采样间距是 GPX 中相邻轨迹点的水平距离，不代表地图高程库缺失数据。超过100米是当前最大坡度计算的保守筛选条件，不是文件损坏；稀疏区间可能包含未被记录的起伏。</p>
+            <p>同一位置的重复点以中位高程参与统计。任一点缺少高程时，四项高程指标显示“数据不足”；没有完整有效100米窗口时，最大坡度显示“数据不足”。高程误差与平滑尺度仍会影响结果，统计值不能替代实测。</p>
+            <p>旧路线保留旧版统计并标注旧口径，不会自动重算。需要使用新口径时，可将原始 GPX 作为新路线导入；原路线保留，便于对照。</p>
+          </div>
+        </details>
 
         <!-- About -->
         <div class="p-6 bg-slate-50">

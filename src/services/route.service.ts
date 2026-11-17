@@ -475,41 +475,6 @@ export class RouteService {
     return { points, segmentStarts };
   }
 
-  /** @param id 路线 ID。 @returns 无返回值；仅显式重算已保留分段的路线，不猜测旧分段，也不改原始点。 */
-  recalculateRoute(id: string): void {
-    try {
-      const route = this.routes().find(value => value.id === id);
-      if (!route) return;
-      if (!route.segmentStarts) throw new Error('旧路线未保存分段，请选择原始 GPX 更新统计。');
-      this.updateRoute({ ...route, stats: calculateRouteStats(route.points, route.segmentStarts) });
-      this.operationError.set('');
-    } catch (error) { this.operationError.set(describeError(error)); }
-  }
-
-  /**
-   * 通过用户选择的原始 GPX 更新当前路线轨迹和统计，保留当前名称、简介、文件夹与显隐。
-   * @param id 路线 ID。 @param file 原始 GPX。 @returns 完成校验或错误反馈；退出握手等待此任务。
-   */
-  updateRouteFromGpx(id: string, file: File): Promise<void> {
-    const task = this.performRouteUpdate(id, file).finally(() => this.imports.delete(task));
-    this.imports.add(task);
-    return task;
-  }
-
-  /** @param id 目标路线。 @param file 原始文件。 @returns 原子更新共享状态；读取或校验失败保留原轨迹与统计。 */
-  private async performRouteUpdate(id: string, file: File): Promise<void> {
-    try {
-      const { points, segmentStarts } = this.parseGpx(await file.text());
-      const stats = calculateRouteStats(points, segmentStarts);
-      const route = this.routes().find(value => value.id === id);
-      if (!route) return;
-      const updated = { ...route, points, segmentStarts, stats };
-      normalizeData({ ...this.snapshot(), routes: this.routes().map(value => value.id === id ? updated : value) });
-      this.updateRoute(updated);
-      this.operationError.set('');
-    } catch (error) { this.operationError.set(describeError(error, '更新统计失败，请检查原始 GPX。')); }
-  }
-
   private getDistinctColor(existingRoutes: RouteData[]): string {
     const usedColors = new Set(existingRoutes.map(r => r.color.toLowerCase()));
     

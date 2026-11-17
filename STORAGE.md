@@ -5,7 +5,7 @@
 - 正式桌面数据：`app.getPath('userData')/storage.json`，Windows 通常为 `%APPDATA%/veloroute-manager/storage.json`。
 - 开发数据：`%APPDATA%/veloroute-manager-development/`；测试始终使用独立临时目录。
 - 当前格式为 `version: 4`，保留 `folders/routes/settings`；导出备份另含 `timestamp`。兼容无版本、v1、v2 和 v3 数据，补齐历史缺省字段；未知版本不自动回退或覆盖。
-- 新路线保留 `segmentStarts`，缺高程为 null；统计记录 `algorithmVersion` 和质量提示，数据不足的高程指标允许 null。历史统计和用户名称原样保留，不猜测旧分段、不自动重算；主动更新与回退方法见 [STATISTICS.md](STATISTICS.md)。旧版软件不支持此格式，升级后不要用旧版覆盖新数据。
+- 新路线保留 `segmentStarts`，缺高程为 null；统计记录 `algorithmVersion` 和质量提示，数据不足的高程指标允许 null。历史统计和用户名称原样保留，不猜测旧分段、不自动重算；统计口径与历史路线处理见 [STATISTICS.md](STATISTICS.md)。旧版软件不支持此格式，升级后不要用旧版覆盖新数据。
 - `shared/storage-schema.mjs` 是桌面、浏览器、备份导入的统一运行时校验入口。校验 ID 唯一性、文件夹关联、坐标范围、有限数值、统计及设置类型；校验失败不部分导入。
 
 ## 桌面保存

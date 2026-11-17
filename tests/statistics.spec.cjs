@@ -20,26 +20,34 @@ async function open(page) {
   await page.getByRole('button', { name: '路线管理与 GPX 导入' }).click();
 }
 
-test('分段统计导入、显式重算、原始GPX更新与备份恢复保持元数据和原始点', async ({ page }) => {
+test('统计说明按需展开，路线详情移除更新操作且导入备份保持原始数据', async ({ page }) => {
   await open(page);
-  await page.locator('input[accept=".gpx"]').first().setInputFiles(file(gpx()));
+  await page.locator('input[accept=".gpx"]').first().setInputFiles(file(gpx(2)));
   await page.getByText('统计验证', { exact: true }).click();
-  await expect(page.getByTestId('stat-gain')).toHaveText('10 m');
+  await expect(page.getByTestId('stat-gain')).toHaveText('20 m');
   await expect(page.getByTestId('stat-average')).toHaveText('10%');
   await expect(page.getByTestId('stat-maximum')).toHaveText('10%');
   await page.getByLabel('路线简介').fill('保留的用户简介');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('velo_data') ?? 'null')?.routes[0]?.description)).toBe('保留的用户简介');
   const original = await page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0]);
-  await page.getByRole('button', { name: '重新计算统计', exact: true }).click();
-  await expect(page.getByTestId('stat-gain')).toHaveText('10 m');
-  page.on('dialog', dialog => dialog.accept());
-  await page.getByTestId('stats-gpx-file').setInputFiles(file(gpx(2)));
-  await expect(page.getByTestId('stat-gain')).toHaveText('20 m');
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0].points.length)).toBe(22);
-  const updated = await page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0]);
-  for (const key of ['id', 'name', 'description', 'folderId', 'color', 'isVisible']) expect(updated[key]).toEqual(original[key]);
+  await expect(page.getByRole('button', { name: '重新计算统计', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('stats-gpx-file')).toHaveCount(0);
+  const updated = original;
   expect(updated.segmentStarts).toEqual([0, 11]);
   expect(updated.stats.algorithmVersion).toBe(1);
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  const note = page.getByText('部分采样间距超过100米；累计升降为估算值，最大坡度仅采用有连续采样支撑的区间。', { exact: true });
+  await expect(note).toBeHidden();
+  const summary = page.locator('summary').filter({ hasText: '路线统计与计算说明' });
+  await summary.click();
+  await expect(note).toBeVisible();
+  await expect(page.getByText('平均上坡坡度', { exact: true })).toBeVisible();
+  await summary.click();
+  await expect(note).toBeHidden();
+  await page.getByRole('button', { name: '返回路线管理', exact: true }).click();
+  await page.getByText('统计验证', { exact: true }).click();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0])).toEqual(original);
+  page.on('dialog', dialog => dialog.accept());
   const download = page.waitForEvent('download');
   await page.getByRole('button', { name: '导出备份', exact: true }).click();
   const backup = await download;
@@ -53,7 +61,7 @@ test('分段统计导入、显式重算、原始GPX更新与备份恢复保持�
   await page.getByText('统计验证', { exact: true }).click();
   await expect(page.getByTestId('stat-gain')).toHaveText('20 m');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0])).toEqual(updated);
-  await page.getByTestId('stats-gpx-file').setInputFiles(file(gpx().replace('lat="0"', 'lat="错误"')));
+  await page.locator('input[accept=".gpx"]').first().setInputFiles(file(gpx().replace('lat="0"', 'lat="错误"')));
   await expect(page.getByLabel('保存状态')).toContainText('无效');
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0])).toEqual(updated);
 });
