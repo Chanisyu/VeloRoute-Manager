@@ -501,6 +501,12 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
   // --- Mapbox Data Handling ---
 
+  /**
+   * 同步路线的独立显示与命中图层；已知分段以多段线绘制，不跨缺口连线。
+   * @param routes 当前路线快照。
+   * @param isCompMode 是否按文件夹着色。
+   * @returns 无返回值；地图或样式未就绪时沿用原有保护逻辑。
+   */
   private updateMapData(routes: RouteData[], isCompMode: boolean) {
       if (!this.map || !this.map.getStyle()) return;
 
@@ -535,6 +541,12 @@ export class MapViewComponent implements OnInit, OnDestroy {
       });
   }
 
+  /**
+   * 建立路线的多段GeoJSON、可见层和命中层，避免将原始分段之间的空白画成路线。
+   * @param route 含原始坐标及可选分段的路线；旧路线沿用单段表现。
+   * @param color 当前路线或文件夹颜色。
+   * @returns 无返回值；少于两个点的独立分段不绘制，地图异常沿用原有捕获逻辑。
+   */
   private addRouteToMap(route: RouteData, color: string) {
       const geojson = {
           type: 'Feature',
@@ -543,8 +555,11 @@ export class MapViewComponent implements OnInit, OnDestroy {
               description: `<strong class="text-sm">${route.name}</strong><br><span class="text-xs text-gray-500">${route.stats.distanceKm} km</span>`
           },
           geometry: {
-              type: 'LineString',
-              coordinates: route.points.map(p => [p.lon, p.lat]) 
+              // 各段独立绘制；历史路线没有分段时仍按原有单段显示，不猜测断点。
+              type: 'MultiLineString',
+              coordinates: (route.segmentStarts ?? [0]).map((start, i, starts) =>
+                route.points.slice(start, starts[i + 1] ?? route.points.length).map(p => [p.lon, p.lat])
+              ).filter(segment => segment.length >= 2)
           }
       };
 

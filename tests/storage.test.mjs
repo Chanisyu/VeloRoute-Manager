@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { AtomicStore } from '../storage/store.mjs';
 import { normalizeData } from '../shared/storage-schema.mjs';
+import { calculateRouteStats } from '../shared/route-statistics.mjs';
 import { loadBrowserData, saveBrowserData, DATA_KEY, BACKUP_KEY } from '../shared/browser-storage.mjs';
 
 /** @param {string} name 路线名。 @returns {object} 独立的合法 v2 备份样本。 */
@@ -45,12 +46,28 @@ class MemoryStorage {
   }
 }
 
+test('v4缺失高程、分段和统计版本经桌面原子保存及重读完整保留', async t => {
+  const dir = await temporaryDirectory(t);
+  const store = new AtomicStore(path.join(dir, 'storage.json'));
+  const data = fixture(); data.version = 4;
+  const route = data.routes[0]; route.points[0].ele = null; route.segmentStarts = [0];
+  route.stats = calculateRouteStats(route.points, route.segmentStarts);
+  await store.load();
+  assert.equal((await store.save(data)).success, true);
+  const loaded = await store.load();
+  assert.deepEqual(loaded.data.routes[0], route);
+  assert.equal(loaded.data.version, 4);
+  const invalid = structuredClone(data); invalid.routes[0].stats.warnings = [];
+  assert.equal((await store.save(invalid)).success, false);
+  assert.deepEqual((await store.load()).data.routes[0], route);
+});
+
 test('迁移无版本/v2 数据并保留中文、标识符和业务值', () => {
   const old = fixture();
   delete old.version;
   delete old.routes[0].stats.minSlope;
   const data = normalizeData(old);
-  assert.equal(data.version, 3);
+  assert.equal(data.version, 4);
   assert.equal(data.routes[0].name, '原有路线');
   assert.equal(data.routes[0].folderId, '1');
   assert.equal(data.routes[0].stats.minSlope, 0);
@@ -149,7 +166,7 @@ test('双份数据损坏时禁止自动保存，显式恢复保留原文件', as
   assert.equal((await store.save(fixture())).success, false);
   assert.equal(await fs.readFile(store.file, 'utf8'), 'damaged');
   assert.equal((await store.save(fixture(), true)).success, true);
-  assert.equal(JSON.parse(await fs.readFile(store.file, 'utf8')).version, 3);
+  assert.equal(JSON.parse(await fs.readFile(store.file, 'utf8')).version, 4);
   assert.equal(await fs.readFile(store.backup, 'utf8'), 'damaged-backup');
 });
 
@@ -196,7 +213,7 @@ test('浏览器迁移旧三键，保留原键并写入单个完整快照', () =>
   const loaded = loadBrowserData(storage);
   assert.equal(loaded.needsMigration, true);
   assert.equal(saveBrowserData(storage, loaded.data).success, true);
-  assert.equal(JSON.parse(storage.getItem(DATA_KEY)).version, 3);
+  assert.equal(JSON.parse(storage.getItem(DATA_KEY)).version, 4);
   assert.equal(storage.getItem('velo_routes'), JSON.stringify(data.routes));
 });
 

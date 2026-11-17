@@ -17,7 +17,8 @@
 | 位置 | 职责与扩展入口 |
 | --- | --- |
 | `src/app.component.ts` | 通过 Signal 切换地图、管理、设置视图；未接入 Angular Router。 |
-| `src/services/route.service.ts` | 数据类型、共享状态、GPX 解析、统计、自动保存、备份及 Token 验证集中于此。 |
+| `src/services/route.service.ts` | 共享状态、GPX 解析及更新、统计调用、自动保存、备份和 Token 验证。 |
+| `shared/route-statistics.mjs` | 纯函数统计引擎及口径版本；细节和验证依据见 [STATISTICS.md](STATISTICS.md)。 |
 | `shared/storage-schema.mjs`、`storage/store.mjs` | 跨进程数据校验/迁移与桌面原子存储；类型声明为相邻 `.d.mts`。 |
 | `src/component/storage-status.component.ts` | 保存反馈、失败重试及读取失败后的安全恢复入口。 |
 | `src/component/map-view.component.ts` | 底图、地形、路线图层、悬浮/点击交互、文件夹对比；每条路线有独立 GeoJSON source、显示层和命中层。 |
@@ -28,10 +29,11 @@
 ## 数据与地图边界
 
 - 界面统一使用简体中文，Mapbox 控件和桌面菜单亦提供中文；保留品牌、格式名称、单位及底图英文名称（`Outdoors (3D)`、`OpenStreetMap`）。仅首次默认目录、新导入简介使用中文，不批量翻译已有用户名称或简介，也不更改 JSON 字段名。`shared/user-messages.mjs` 统一平台错误的中文说明。
-- `RouteData` 保存 UUID、所属 `folderId`、名称/描述、`points`、`stats`、颜色及显隐状态；点格式为 `{lat, lon, ele}`，GeoJSON 坐标顺序为 `[lon, lat]`。删除文件夹会连同路线删除。
-- GPX 仅提取 `trkpt`，缺失高程按 0 处理，不保留原始 XML、时间或扩展字段；不同 `trk/trkseg` 被合并，不支持 `rtept/wpt`。距离使用 Haversine；平均坡度是有效点段有符号坡度的算术平均，坡度绝对值 ≥50% 的段不参与坡度统计。
-- 桌面为 `storage.json`（v3，保留 folders/routes/settings）；`.bak` 为上一版有效数据。未打包运行仍使用独立开发目录。主进程排队异步写入、同步临时文件后替换；读取损坏时禁止默认数据覆盖。恢复原文保存在 `.preserved-*.json`，详情见 [STORAGE.md](STORAGE.md)。
-- 导出备份为 v3（含时间戳与 Mapbox Token），兼容无版本/v1/v2；统一校验后先落盘再替换界面。浏览器使用 `velo_data/velo_data_backup`，只在缺少新键时迁移旧三键；桌面不再维护浏览器数据镜像。
+- `RouteData` 保存 UUID、所属 `folderId`、名称/描述、`points`、`segmentStarts`、`stats`、颜色及显隐。点为 `{lat, lon, ele}`，高程缺失为 null；GeoJSON 使用 `[lon, lat]`，已知分段绘制为 MultiLineString。删除文件夹会连同路线删除。
+- GPX 保留原始点序及 trkseg 边界，不保留 XML、时间或扩展字段，不支持 rtept/wpt。统计 v1 按20m RDP关键轮廓及±100m趋势残差平滑累计升降；均值为距离加权上坡坡度，最大坡度为完整100m窗口。跨分段/长缺口不求最大坡度，无50%硬截断；数据不足用null。原始点不被滤波覆盖。
+- 历史统计不自动重算或套用新名称；旧分段不可恢复时需用户选择原始GPX更新，保留路线ID、名称、简介与归属。原始GPX更新任务必须纳入退出等待。
+- 桌面为 `storage.json`（v4，保留 folders/routes/settings）；`.bak` 为上一版有效数据。未打包运行仍使用独立开发目录。主进程排队异步写入、同步临时文件后替换；读取损坏时禁止默认数据覆盖。恢复原文保存在 `.preserved-*.json`，详情见 [STORAGE.md](STORAGE.md)。
+- 导出备份为 v4（含时间戳与 Mapbox Token），兼容无版本/v1/v2/v3；统一校验后先落盘再替换界面。浏览器使用 `velo_data/velo_data_backup`，只在缺少新键时迁移旧三键；桌面不再维护浏览器数据镜像。
 - 保存防抖 400ms；正常关闭等待待保存快照、导入、恢复及在途写入，失败返回应用。不要绕过校验直接设置加载结果，也不要把读取失败当作首次启动。主进程以单实例锁保护同一数据目录。
 - 普通保存反馈显示 3 秒后渐隐 300ms 并移除；进行中及错误状态持续可见。新状态或通知须取消旧计时，展示状态不参与持久化。
 - `mapState` 仅在内存中保留视角；重启会重置对比模式。底图只有 Outdoors v12 和 OSM 栅格，地形在倾斜时启用；OSM 也受当前 Mapbox Token 初始化流程约束。切换样式后必须恢复路线图层。
@@ -41,6 +43,7 @@
 - 使用 Node.js 22.22.3、npm 10.9.8 和 `npm ci`；所有直接依赖固定版本并提交锁文件。本阶段维持旧框架版本系列，升级单独实施。
 - 日常运行 `npm run dev`（`electron:dev` 为别名），前端自动刷新，主进程/preload 自动重启；Web 为 `npm start`；静态桌面预览为 `npm run electron:preview`。完整流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。
 - `npm run check` 执行语法检查、存储故障测试、生产构建及 Playwright 浏览器/Electron 测试；`npm run test:storage` 单独验证存储层。首次安装浏览器命令不变；测试使用 4201 端口及临时目录。
+- `npm run test:statistics` 验证解析解、分段、缺高程、重复位置、采样缺口及200条可复现随机轨迹的不变量；已接入完整检查。
 - `npm run electron:build` 使用相对资源路径，输出 `release/`，禁用自动发布；当前使用 Electron 默认图标。GitHub Actions 在 Windows 上检查构建、测试及安装包生成。
 - 功能变更验证受影响的 GPX 导入、地图交互、重启持久化及备份恢复流程；交付前验证安装包。不要把普通界面调整变成每次重新安装。
 - 后续安全重点：路线名称仍直接拼入 Popup 的 `setHTML`；旧框架依赖升级另行处理。存储变更必须验证旧格式、损坏文件、失败写入、重试及退出保存，不访问用户正式数据。

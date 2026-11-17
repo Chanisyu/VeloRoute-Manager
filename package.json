@@ -19,7 +19,9 @@
     "prestart": "node scripts/check-runtime.cjs",
     "prebuild": "node scripts/check-runtime.cjs",
     "predev": "node scripts/check-runtime.cjs",
-    "test:storage": "node --test tests/storage.test.mjs"
+    "test:storage": "node --test tests/storage.test.mjs",
+    "test:statistics": "node --test tests/statistics.test.mjs",
+    "pretest": "npm run test:statistics"
   },
   "private": true,
   "dependencies": {

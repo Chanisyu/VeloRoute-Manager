@@ -1,4 +1,4 @@
-export const CURRENT_VERSION = 3;
+export const CURRENT_VERSION = 4;
 // 仅翻译校验提示中的字段名称；JSON 键名与数据迁移规则保持原样。
 const FIELD_LABELS = {
   "id": "标识符",
@@ -88,7 +88,7 @@ function color(value, fallback) {
 }
 
 /**
- * 将历史存储、备份或 IPC 输入规范化为 v3；完整校验后才返回全新的对象。
+ * 将历史存储、备份或 IPC 输入规范化为 v4；保留旧统计，不在迁移时重新计算。
  * 旧数据缺少的界面字段使用兼容默认值；业务坐标、统计与关联错误不得静默修复。
  * @param {unknown} input 待读取或保存的数据，不信任其 TypeScript 类型。
  * @returns {import('./storage-schema.mjs').AppData} 可安全持久化的快照。
@@ -99,7 +99,7 @@ export function normalizeData(input) {
   if (typeof version === 'number' && version > CURRENT_VERSION) {
     throw new DataValidationError('数据版本较新，请使用兼容版本的软件读取。', 'UNSUPPORTED_VERSION');
   }
-  requireValid([1, 2, 3].includes(version), 'version');
+  requireValid([1, 2, 3, 4].includes(version), 'version');
   requireValid(Array.isArray(input.folders) && Array.isArray(input.routes), 'folders/routes');
   if (input.timestamp !== undefined) requireValid(finite(input.timestamp, 'timestamp') >= 0, 'timestamp');
   const folderIds = new Set();
@@ -116,24 +116,49 @@ export function normalizeData(input) {
     requireValid(isRecord(route), 'route');
     requireValid(folderIds.has(route.folderId), 'route.folderId 未关联有效文件夹');
     requireValid(Array.isArray(route.points) && route.points.length >= 2, 'route.points 至少包含两个点');
-    const points = route.points.map(point => {
+    const points = Array.from(route.points).map(point => {
       requireValid(isRecord(point), 'point');
       const lat = finite(point.lat, 'point.lat');
       const lon = finite(point.lon, 'point.lon');
       requireValid(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180, '坐标超出范围');
-      return { lat, lon, ele: finite(point.ele === undefined && version < 3 ? 0 : point.ele, 'point.ele') };
+      return { lat, lon, ele: version >= 4 && point.ele === null ? null : finite(point.ele === undefined && version < 3 ? 0 : point.ele, 'point.ele') };
     });
+    // 旧格式已丢失分段，不能用 [0] 假装恢复；只有明确提供的分段才保留。
+    let segmentStarts;
+    if (route.segmentStarts !== undefined) {
+      const starts = route.segmentStarts;
+      requireValid(version >= 4 && Array.isArray(starts) && starts.length > 0 && starts[0] === 0
+        && Array.from(starts).every((value, i) => Number.isInteger(value) && value >= 0 && value < points.length && (i === 0 || value > starts[i - 1])), '轨迹分段索引');
+      segmentStarts = [...starts];
+    }
     requireValid(isRecord(route.stats), 'route.stats');
+    const currentStats = route.stats.algorithmVersion !== undefined;
+    if (currentStats) requireValid(version >= 4 && route.stats.algorithmVersion === 1 && segmentStarts !== undefined, '统计算法版本或分段信息');
     const stats = {};
     for (const field of ['distanceKm', 'elevationGainM', 'elevationLossM', 'avgSlope', 'maxSlope', 'minSlope']) {
-      stats[field] = finite(route.stats[field] === undefined && field === 'minSlope' && version < 3 ? 0 : route.stats[field], `stats.${field}`);
+      const value = route.stats[field] === undefined && field === 'minSlope' && version < 3 ? 0 : route.stats[field];
+      stats[field] = currentStats && field !== 'distanceKm' && value === null ? null : finite(value, `stats.${field}`);
     }
-    requireValid(stats.distanceKm >= 0 && stats.elevationGainM >= 0 && stats.elevationLossM >= 0, '距离与累计升降不能为负');
+    requireValid(stats.distanceKm >= 0 && (stats.elevationGainM === null || stats.elevationGainM >= 0)
+      && (stats.elevationLossM === null || stats.elevationLossM >= 0), '距离与累计升降不能为负');
+    if (currentStats) {
+      const warnings = route.stats.warnings;
+      const allowed = ['missing-elevation', 'sparse-sampling', 'duplicate-position'];
+      requireValid(Array.isArray(warnings) && Array.from(warnings).every(value => allowed.includes(value)) && new Set(warnings).size === warnings.length, '统计质量提示');
+      const missing = points.some(point => point.ele === null);
+      requireValid(warnings.includes('missing-elevation') === missing, '高程缺失提示');
+      requireValid(missing ? ['elevationGainM', 'elevationLossM', 'avgSlope', 'maxSlope', 'minSlope'].every(key => stats[key] === null)
+        : stats.elevationGainM !== null && stats.elevationLossM !== null && stats.avgSlope !== null, '高程统计可用性');
+      requireValid((stats.avgSlope === null || stats.avgSlope >= 0) && (stats.maxSlope === null || stats.maxSlope >= 0)
+        && (stats.minSlope === null || stats.minSlope <= 0) && (stats.maxSlope === null) === (stats.minSlope === null), '坡度统计范围');
+      stats.algorithmVersion = 1; stats.warnings = [...warnings];
+    } else requireValid(points.every(point => point.ele !== null), '旧版统计不支持缺失高程');
     return {
       id: identifier(route.id, routeIds), name: text(route.name, 'route.name'),
       description: text(route.description === undefined ? '' : route.description, 'route.description'), folderId: route.folderId,
       points, stats, color: color(route.color, COLORS[i % COLORS.length]),
-      isVisible: boolean(route.isVisible === undefined ? true : route.isVisible, 'route.isVisible')
+      isVisible: boolean(route.isVisible === undefined ? true : route.isVisible, 'route.isVisible'),
+      ...(segmentStarts ? { segmentStarts } : {})
     };
   });
   const settings = input.settings === undefined ? {} : input.settings;

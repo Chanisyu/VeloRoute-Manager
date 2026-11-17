@@ -145,7 +145,7 @@ test('桌面旧数据迁移及非法备份拒绝，当前路线与文件不变',
   await withDesktop(async ({ page, dir }) => {
     await openLibrary(page);
     const file = path.join(dir, 'storage.json');
-    await expect.poll(async () => JSON.parse(await fs.readFile(file, 'utf8')).version).toBe(3);
+    await expect.poll(async () => JSON.parse(await fs.readFile(file, 'utf8')).version).toBe(4);
     expect(JSON.parse(await fs.readFile(file + '.bak', 'utf8')).version).toBe(2);
     const before = await fs.readFile(file, 'utf8');
     page.on('dialog', dialog => dialog.accept());
@@ -297,4 +297,33 @@ test('中文界面保留历史英文名称与简介，编辑后仍按原数据�
     const menuLabels = await desktop.evaluate(({ Menu }) => Menu.getApplicationMenu().items.map(item => item.label));
     expect(menuLabels).toEqual(['文件', '编辑', '视图', '窗口', '帮助']);
   }, { 'storage.json': JSON.stringify(legacy) });
+});
+
+test('原始GPX更新期间关闭窗口，等待轨迹和新统计一并保存且保留用户信息', async () => {
+  await withDesktop(async ({ desktop, page, dir }) => {
+    await openLibrary(page);
+    await page.getByText('原有路线', { exact: true }).click();
+    page.on('dialog', dialog => dialog.accept());
+    await page.evaluate(() => {
+      const original = File.prototype.text;
+      File.prototype.text = async function () {
+        await new Promise(resolve => { window.__releaseStatisticsFile = resolve; });
+        return original.call(this);
+      };
+    });
+    const xml = '<gpx><trk><trkseg><trkpt lat="22" lon="114"><ele>10</ele></trkpt><trkpt lat="22.01" lon="114.01"><ele>20</ele></trkpt></trkseg></trk></gpx>';
+    await page.getByTestId('stats-gpx-file').setInputFiles({ name: 'original.gpx', mimeType: 'application/gpx+xml', buffer: Buffer.from(xml) });
+    await expect.poll(() => page.evaluate(() => typeof window.__releaseStatisticsFile)).toBe('function');
+    const closed = desktop.waitForEvent('close');
+    await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
+    await page.evaluate(() => window.__releaseStatisticsFile());
+    await closed;
+    const saved = JSON.parse(await fs.readFile(path.join(dir, 'storage.json'), 'utf8'));
+    expect(saved.version).toBe(4);
+    expect(saved.routes[0].id).toBe('r1');
+    expect(saved.routes[0].name).toBe('原有路线');
+    expect(saved.routes[0].segmentStarts).toEqual([0]);
+    expect(saved.routes[0].stats.algorithmVersion).toBe(1);
+    expect(saved.routes[0].stats.elevationGainM).toBe(10);
+  }, { 'storage.json': JSON.stringify(fixture()) });
 });

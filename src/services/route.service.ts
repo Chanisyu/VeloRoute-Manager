@@ -1,4 +1,5 @@
 import { describeError } from '../../shared/user-messages.mjs';
+import { calculateRouteStats } from '../../shared/route-statistics.mjs';
 import { Injectable, signal, effect, NgZone, inject } from '@angular/core';
 import {
   normalizeData, CURRENT_VERSION,
@@ -327,7 +328,7 @@ export class RouteService {
 
   // --- GPX Processing & Helper ---
   
-  /** @returns {void} 导出含设置及时间戳的 v3 完整快照，不修改当前存储与保存队列。 */
+  /** @returns {void} 导出含原始分段、统计版本、设置及时间戳的完整快照，不修改当前状态。 */
   downloadBackup() {
     const data: AppDataBackup = {
       version: CURRENT_VERSION,
@@ -419,29 +420,15 @@ export class RouteService {
     for (const file of files) {
       try {
         const text = await file.text();
-        const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(text, "text/xml");
-        const trkpts = xmlDoc.getElementsByTagName('trkpt');
-        const points: RoutePoint[] = [];
-
-        for (let i = 0; i < trkpts.length; i++) {
-          const pt = trkpts[i];
-          const eleTag = pt.getElementsByTagName('ele')[0];
-          points.push({
-            lat: parseFloat(pt.getAttribute('lat') || '0'),
-            lon: parseFloat(pt.getAttribute('lon') || '0'),
-            ele: eleTag ? parseFloat(eleTag.textContent || '0') : 0
-          });
-        }
-        if (points.length < 2) continue;
-        const stats = this.calculateStats(points);
+        const { points, segmentStarts } = this.parseGpx(text);
+        const stats = calculateRouteStats(points, segmentStarts);
         const color = this.getDistinctColor([...currentRoutes, ...newRoutes]);
 
         const candidate: RouteData = {
           id: crypto.randomUUID(),
           name: file.name.replace('.gpx', ''),
           description: '从 GPX 导入',
-          folderId, points, stats, color, isVisible: true
+          folderId, points, segmentStarts, stats, color, isVisible: true
         };
         // 在改动共享状态前校验坐标及统计，避免一个非法文件使整份数据无法保存。
         normalizeData({ ...this.snapshot(), routes: [...this.routes(), ...newRoutes, candidate] });
@@ -455,44 +442,72 @@ export class RouteService {
     }
   }
 
-  // Helper methods
-  private calculateStats(points: RoutePoint[]): RouteStats {
-     let distance = 0; let gain = 0; let loss = 0;
-     let maxSlope = -Infinity; let minSlope = Infinity;
-     let slopeSum = 0; let slopeCount = 0;
-
-    for (let i = 0; i < points.length - 1; i++) {
-      const p1 = points[i]; const p2 = points[i+1];
-      const d = this.haversine(p1.lat, p1.lon, p2.lat, p2.lon);
-      if (d === 0) continue;
-      distance += d;
-      const eleDiff = p2.ele - p1.ele;
-      if (eleDiff > 0) gain += eleDiff;
-      if (eleDiff < 0) loss += Math.abs(eleDiff);
-      const runMeters = d * 1000;
-      const slope = (eleDiff / runMeters) * 100;
-      if (Math.abs(slope) < 50) {
-        if (slope > maxSlope) maxSlope = slope;
-        if (slope < minSlope) minSlope = slope;
-        slopeSum += slope; slopeCount++;
+  /**
+   * 严格解析 GPX 的直接 trk/trkseg/trkpt 子节点，保留分段、原始点序及缺失高程。
+   * @param text 原始 XML 文本，不执行其中任何内容。
+   * @returns 有至少两个轨迹点的原始数据；非法 XML、字段或不支持的路线格式抛错。
+   */
+  private parseGpx(text: string): { points: RoutePoint[]; segmentStarts: number[] } {
+    const xml = new DOMParser().parseFromString(text, 'application/xml');
+    if (xml.getElementsByTagNameNS('*', 'parsererror').length || xml.documentElement.localName !== 'gpx') {
+      throw new Error('文件不是有效的 GPX 轨迹 XML。');
+    }
+    /** @param value XML 数字文本。 @returns 有限数值；拒绝缺失坐标、非数字及部分可解析字符串。 */
+    const number = (value: string | null): number => {
+      if (value === null || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i.test(value.trim()) || !Number.isFinite(Number(value))) {
+        throw new Error('轨迹文件包含无效的坐标或高程。');
+      }
+      return Number(value);
+    };
+    const points: RoutePoint[] = []; const segmentStarts: number[] = [];
+    for (const track of Array.from(xml.documentElement.children).filter(node => node.localName === 'trk')) {
+      for (const segment of Array.from(track.children).filter(node => node.localName === 'trkseg')) {
+        const trackpoints = Array.from(segment.children).filter(node => node.localName === 'trkpt');
+        if (!trackpoints.length) continue;
+        segmentStarts.push(points.length);
+        for (const point of trackpoints) {
+          const ele = Array.from(point.children).find(node => node.localName === 'ele')?.textContent?.trim();
+          points.push({ lat: number(point.getAttribute('lat')), lon: number(point.getAttribute('lon')), ele: ele ? number(ele) : null });
+        }
       }
     }
-    return {
-      distanceKm: parseFloat(distance.toFixed(2)),
-      elevationGainM: Math.round(gain),
-      elevationLossM: Math.round(loss),
-      avgSlope: slopeCount > 0 ? parseFloat((slopeSum / slopeCount).toFixed(1)) : 0,
-      maxSlope: maxSlope === -Infinity ? 0 : parseFloat(maxSlope.toFixed(1)),
-      minSlope: minSlope === Infinity ? 0 : parseFloat(minSlope.toFixed(1)),
-    };
+    if (points.length < 2) throw new Error('轨迹至少需要两个轨迹点。');
+    return { points, segmentStarts };
   }
 
-  private haversine(lat1: number, lon1: number, lat2: number, lon2: number): number {
-    const R = 6371; 
-    const dLat = (lat2 - lat1) * (Math.PI / 180);
-    const dLon = (lon2 - lon1) * (Math.PI / 180);
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  /** @param id 路线 ID。 @returns 无返回值；仅显式重算已保留分段的路线，不猜测旧分段，也不改原始点。 */
+  recalculateRoute(id: string): void {
+    try {
+      const route = this.routes().find(value => value.id === id);
+      if (!route) return;
+      if (!route.segmentStarts) throw new Error('旧路线未保存分段，请选择原始 GPX 更新统计。');
+      this.updateRoute({ ...route, stats: calculateRouteStats(route.points, route.segmentStarts) });
+      this.operationError.set('');
+    } catch (error) { this.operationError.set(describeError(error)); }
+  }
+
+  /**
+   * 通过用户选择的原始 GPX 更新当前路线轨迹和统计，保留当前名称、简介、文件夹与显隐。
+   * @param id 路线 ID。 @param file 原始 GPX。 @returns 完成校验或错误反馈；退出握手等待此任务。
+   */
+  updateRouteFromGpx(id: string, file: File): Promise<void> {
+    const task = this.performRouteUpdate(id, file).finally(() => this.imports.delete(task));
+    this.imports.add(task);
+    return task;
+  }
+
+  /** @param id 目标路线。 @param file 原始文件。 @returns 原子更新共享状态；读取或校验失败保留原轨迹与统计。 */
+  private async performRouteUpdate(id: string, file: File): Promise<void> {
+    try {
+      const { points, segmentStarts } = this.parseGpx(await file.text());
+      const stats = calculateRouteStats(points, segmentStarts);
+      const route = this.routes().find(value => value.id === id);
+      if (!route) return;
+      const updated = { ...route, points, segmentStarts, stats };
+      normalizeData({ ...this.snapshot(), routes: this.routes().map(value => value.id === id ? updated : value) });
+      this.updateRoute(updated);
+      this.operationError.set('');
+    } catch (error) { this.operationError.set(describeError(error, '更新统计失败，请检查原始 GPX。')); }
   }
 
   private getDistinctColor(existingRoutes: RouteData[]): string {

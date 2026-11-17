@@ -98,7 +98,7 @@ import { FormsModule } from '@angular/forms';
                         <div class="text-xs opacity-80 flex gap-2 mt-0.5">
                         <span>{{ route.stats.distanceKm }}km</span>
                         <span>•</span>
-                        <span>{{ route.stats.elevationGainM }}m</span>
+                        <span>{{ route.stats.elevationGainM === null ? '爬升未知' : route.stats.elevationGainM + 'm' }}</span>
                         </div>
                     </div>
                     }
@@ -147,23 +147,39 @@ import { FormsModule } from '@angular/forms';
                  </div>
                </div>
 
-               <div class="grid grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-700">
+               <!-- 旧统计保留原含义；新口径的不可用值明确提示，不将 null 显示为零。 -->
+               <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-700">
                   <div>
                     <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">累计爬升</div>
-                    <div class="text-xl font-semibold">{{ route.stats.elevationGainM }} m</div>
+                    <div class="text-xl font-semibold" data-testid="stat-gain">{{ route.stats.elevationGainM === null ? '数据不足' : route.stats.elevationGainM + ' m' }}</div>
                   </div>
                   <div>
                     <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">累计下降</div>
-                    <div class="text-xl font-semibold">{{ route.stats.elevationLossM }} m</div>
+                    <div class="text-xl font-semibold" data-testid="stat-loss">{{ route.stats.elevationLossM === null ? '数据不足' : route.stats.elevationLossM + ' m' }}</div>
                   </div>
                   <div>
-                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">平均坡度</div>
-                    <div class="text-xl font-semibold">{{ route.stats.avgSlope }}%</div>
+                    <div class="text-slate-400 text-xs mb-1">{{ route.stats.algorithmVersion ? '平均上坡坡度' : '平均坡度（旧）' }}</div>
+                    <div class="text-xl font-semibold" data-testid="stat-average">{{ route.stats.avgSlope === null ? '数据不足' : route.stats.avgSlope + '%' }}</div>
                   </div>
                    <div>
-                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">最大坡度</div>
-                    <div class="text-xl font-semibold text-red-400">{{ route.stats.maxSlope }}%</div>
+                    <div class="text-slate-400 text-xs mb-1">{{ route.stats.algorithmVersion ? '最大 100 米平均坡度' : '最大坡度（旧）' }}</div>
+                    <div class="text-xl font-semibold text-red-400" data-testid="stat-maximum">{{ route.stats.maxSlope === null ? '数据不足' : route.stats.maxSlope + '%' }}</div>
                   </div>
+               </div>
+               @if (!route.stats.algorithmVersion) {
+                 <p class="mt-4 text-xs text-amber-200">当前为旧版统计。选择原始 GPX 可更新四项指标，并恢复原始分段信息。</p>
+               }
+               @for (warning of statisticsWarnings(route); track warning) {
+                 <p class="mt-3 text-xs text-amber-200">{{ warning }}</p>
+               }
+               <div class="mt-4 flex flex-wrap gap-3 text-xs">
+                 @if (route.segmentStarts) {
+                   <button class="border border-slate-600 rounded px-3 py-2 hover:bg-slate-800" (click)="service.recalculateRoute(route.id)">重新计算统计</button>
+                 }
+                 <label class="border border-slate-600 rounded px-3 py-2 hover:bg-slate-800 cursor-pointer">
+                   从原始 GPX 更新统计
+                   <input data-testid="stats-gpx-file" type="file" accept=".gpx" class="hidden" (change)="updateStatistics($event, route.id)">
+                 </label>
                </div>
             </div>
 
@@ -242,6 +258,26 @@ export class ManagementViewComponent implements OnInit {
 
   getRoutesInFolder(folderId: string) {
     return this.service.routes().filter(r => r.folderId === folderId);
+  }
+
+  /** @param route 当前路线。 @returns 可读的数据质量说明；不将缺高程、长采样间隔或重复位置静默当作准确测量。 */
+  statisticsWarnings(route: RouteData): string[] {
+    const messages = {
+      'missing-elevation': '部分轨迹点缺少高程，四项高程指标暂不可用；请使用包含完整高程的 GPX。',
+      'sparse-sampling': '部分采样间距超过100米；累计升降为估算值，最大坡度仅采用有连续采样支撑的区间。',
+      'duplicate-position': '存在重复位置；统计时合并同位置高程，原始轨迹点完整保留。'
+    };
+    return (route.stats.warnings ?? []).map(value => messages[value]);
+  }
+
+  /** @param event 用户选定文件的事件。 @param id 目标路线。 @returns 确认后校验更新，取消或失败时保留当前路线，最后清空文件输入。 */
+  async updateStatistics(event: Event, id: string): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (file && confirm('使用所选 GPX 更新当前路线的轨迹和统计，名称、简介与所属文件夹保持不变。是否继续？')) {
+      await this.service.updateRouteFromGpx(id, file);
+    }
+    input.value = '';
   }
 
   /**
