@@ -6,47 +6,46 @@
   "author": "VeloRoute Team",
   "scripts": {
     "ng": "ng",
-    "start": "ng serve",
-    "build": "ng build",
-    "watch": "ng build --watch --configuration development",
-    "test": "ng test",
-    "electron:dev": "npm run build && electron .",
-    "electron:build": "ng build --base-href ./ && electron-builder"
+    "start": "ng serve --host 127.0.0.1 --port 4200",
+    "build": "ng build --base-href ./",
+    "watch": "ng build --watch --configuration development --base-href ./",
+    "electron:preview": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder --win nsis --x64 --publish never",
+    "dev": "concurrently --kill-others --success first -n angular,electron \"npm:start\" \"npm:electron:watch\"",
+    "electron:dev": "npm run dev",
+    "electron:watch": "wait-on --timeout 120000 http-get://127.0.0.1:4200 && cross-env VELOROUTE_DEV_SERVER=1 nodemon --watch main.js --watch preload.js --ext js --exec \"electron .\"",
+    "test": "npm run build && playwright test",
+    "check": "node --check main.js && node --check preload.js && npm test",
+    "prestart": "node scripts/check-runtime.cjs",
+    "prebuild": "node scripts/check-runtime.cjs",
+    "predev": "node scripts/check-runtime.cjs"
   },
   "private": true,
   "dependencies": {
-    "@angular/animations": "^18.0.0",
-    "@angular/common": "^18.0.0",
-    "@angular/compiler": "^18.0.0",
-    "@angular/core": "^18.0.0",
-    "@angular/forms": "^18.0.0",
-    "@angular/platform-browser": "^18.0.0",
-    "@angular/router": "^18.0.0",
-    "leaflet": "^1.9.4",
-    "rxjs": "~7.8.0",
-    "tslib": "^2.3.0",
-    "zone.js": "~0.14.3",
-    "@angular/build": "^18.0.0",
-    "@angular/cli": "^18.0.0",
-    "@angular/compiler-cli": "^18.0.0",
-    "tailwindcss": "latest"
+    "@angular/common": "18.2.14",
+    "@angular/compiler": "18.2.14",
+    "@angular/core": "18.2.14",
+    "@angular/forms": "18.2.14",
+    "@angular/platform-browser": "18.2.14",
+    "mapbox-gl": "3.9.4",
+    "rxjs": "7.8.2",
+    "tslib": "2.8.1",
+    "zone.js": "0.14.10"
   },
   "devDependencies": {
-    "@angular-devkit/build-angular": "^18.0.0",
-    "@angular/cli": "^18.0.0",
-    "@angular/compiler-cli": "^18.0.0",
-    "@types/jasmine": "~5.1.0",
-    "@types/leaflet": "^1.9.12",
-    "@types/node": "^18.18.0",
-    "electron": "^30.0.0",
-    "electron-builder": "^24.13.3",
-    "jasmine-core": "~5.1.0",
-    "karma": "~6.4.0",
-    "karma-chrome-launcher": "~3.2.0",
-    "karma-coverage": "~2.2.0",
-    "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.1.0",
-    "typescript": "~5.4.2"
+    "@angular-devkit/build-angular": "18.2.21",
+    "@angular/cli": "18.2.21",
+    "@angular/compiler-cli": "18.2.14",
+    "@types/node": "22.19.1",
+    "electron": "30.5.1",
+    "electron-builder": "24.13.3",
+    "tailwindcss": "3.4.19",
+    "typescript": "5.4.5",
+    "@playwright/test": "1.56.1",
+    "concurrently": "9.2.5",
+    "cross-env": "7.0.3",
+    "nodemon": "3.1.11",
+    "wait-on": "8.0.5"
   },
   "build": {
     "appId": "com.veloroute.manager",
@@ -61,12 +60,24 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "dist/veloroute-manager/browser/favicon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
-    }
-  }
+    },
+    "electronDist": "node_modules/electron/dist"
+  },
+  "engines": {
+    "node": ">=22.22.3 <23",
+    "npm": ">=10 <11"
+  },
+  "packageManager": "npm@10.9.8"
 }

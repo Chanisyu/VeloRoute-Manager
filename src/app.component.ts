@@ -1,8 +1,9 @@
 
 import { Component, signal } from '@angular/core';
-import { MapViewComponent } from './components/map-view.component';
-import { ManagementViewComponent } from './components/management-view.component';
-import { SettingsViewComponent } from './components/settings-view.component';
+// 使用仓库实际的 component 目录，保证 CLI 与桌面构建解析同一组视图。
+import { MapViewComponent } from './component/map-view.component';
+import { ManagementViewComponent } from './component/management-view.component';
+import { SettingsViewComponent } from './component/settings-view.component';
 
 @Component({
   selector: 'app-root',

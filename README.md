@@ -1,4 +1,3 @@
-
 # **VeloRoute Manager**
 
 **VeloRoute Manager** 是基于AI Studio构建的一个现代化的桌面应用程序，专为自行车爱好者和路线规划者设计。它提供了一个直观的界面来组织、分析和可视化 GPX 骑行路线。
@@ -9,7 +8,7 @@
   <img src="./Screenshot/屏幕截图 2026-02-19 124401.png" width="100%" />
 </p>
 
-该应用基于 **Angular (v18+)** 和 **Electron** 构建，采用 **Zoneless** 架构以实现高性能渲染，并结合 **Mapbox GL JS** 提供令人惊叹的 3D 地形可视化体验。
+该应用基于 **Angular (v18+)** 和 **Electron** 构建，采用 **Zone.js** 架构以实现高性能渲染，并结合 **Mapbox GL JS** 提供令人惊叹的 3D 地形可视化体验。
 
 ## 主要功能
 
@@ -39,7 +38,7 @@
 
 本项目采用了最新的前端技术栈，确保代码的可维护性和高性能：
 
-* **Core Framework**：Angular 18+（独立组件、信号、无区域变更检测）。
+* **Core Framework**：Angular 18+（独立组件、信号、Zone.js 变更检测）。
 * **Desktop Container**: [Electron](https://www.google.com/url?sa=E&q=https%3A%2F%2Fwww.electronjs.org%2F) (通过 IPC 通信处理本地文件读写)。
 * **Styling**: [Tailwind CSS](https://www.google.com/url?sa=E&q=https%3A%2F%2Ftailwindcss.com%2F) (实用优先的 CSS 框架)。
 * **Map Engine**: [Mapbox GL JS v3](https://www.google.com/url?sa=E&q=https%3A%2F%2Fdocs.mapbox.com%2Fmapbox-gl-js%2F) (需 API Key)。
@@ -55,45 +54,25 @@
 
 **本软件仅支持window环境下运行。**
 
-### 前置要求
+### 开发环境
 
-* Node.js (建议 v18 或更高版本)
-* npm
-
-### **安装依赖**
+使用 Node.js **22.22.3**、npm **10.9.8**（见 `.nvmrc`）。安装锁定依赖后，一条命令打开支持自动刷新的桌面开发窗口：
 
 ```bash
-npm install
+npm ci
+npm run dev
 ```
 
-### 开发环境运行
+修改前端源码自动刷新；修改 Electron 主进程或 preload 自动重启。开发与静态预览数据保存在 `%APPDATA%/veloroute-manager-development/`，不使用正式安装版的数据目录。
 
-你有两种方式运行此项目：
+| 命令 | 用途 |
+| --- | --- |
+| `npm start` | 浏览器预览，地址为 http://127.0.0.1:4200 |
+| `npm run check` | 语法检查、生产构建、浏览器与桌面冒烟测试 |
+| `npm run electron:preview` | 构建后直接打开静态桌面产物 |
+| `npm run electron:build` | 构建 Windows x64 NSIS 安装包，输出到 `release/` |
 
-1. **Web 模式 (仅 Angular)**：
-   仅在浏览器中运行前端界面（注意：此模式下无法使用 Electron 的文件读写功能，将回退到 localStorage）。
-
-   ```bash
-   npm start
-   ```
-
-   访问: http://localhost:4200
-
-2. **桌面应用模式 (Electron + Angular)**：
-   构建 Angular 应用并启动 Electron 窗口（推荐开发方式）。
-
-   ```bash
-   npm run electron:dev
-   ```
-
-### 构建生产版本
-
-生成用于分发的安装包或可执行文件：
-```bash
-npm run electron:build
-```
-
-构建产物将位于 `release/` 目录下。
+首次运行自动测试前执行 `npx playwright install chromium --no-shell`。详细流程、测试数据隔离和提交约定见 [开发与验证流程](DEVELOPMENT.md)。
 
 ## Mapbox 配置说明
 
@@ -110,13 +89,13 @@ npm run electron:build
 ```code
 src/
 ├── app.component.ts          # 根组件，处理视图路由（Map vs Manage vs Settings）
-├── components/
+├── component/
 │   ├── map-view.component.ts      # 地图视图核心逻辑（Mapbox 初始化、图层管理）
 │   ├── management-view.component.ts # 侧边栏管理界面（文件夹、路线列表、详情页）
 │   └── settings-view.component.ts   # 设置页面（API Key 管理）
 ├── services/
 │   └── route.service.ts      # 核心服务：状态管理 (Signals)、GPX 解析、数据持久化
-├── main.ts                   # Angular 启动入口 (Zoneless 配置)
+├── main.ts                   # Angular 启动入口 (Zone.js 配置)
 └── ...
 main.js                       # Electron 主进程
 preload.js                    # Electron 预加载脚本 (Context Bridge)
@@ -126,17 +105,4 @@ preload.js                    # Electron 预加载脚本 (Context Bridge)
 
 ## 许可证
 
-此项目仅供学习和个人使用。地图数据版权归 Mapbox 和 OpenStreetMap 所有。
-
-
-
-
-
-
-
-
-
-
-
-
-
+项目许可证见 [LICENSE](LICENSE)。地图数据版权归 Mapbox 和 OpenStreetMap 所有。

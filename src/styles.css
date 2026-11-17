@@ -1,4 +1,9 @@
 
+/* 构建时生成 Tailwind 样式，开发预览与安装包使用相同版本。 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* Global Styles */
 html, body {
     height: 100%;
