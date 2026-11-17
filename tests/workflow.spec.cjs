@@ -12,9 +12,9 @@ const sample = path.join(root, 'GPX_Eample', '待骑行路线', '金碧路.gpx')
  * @returns {Promise<void>} 等待 Angular 完成视图切换。
  */
 async function openLibrary(page) {
-  await page.getByRole('button', { name: 'Skip for now' }).click();
-  await page.getByRole('button', { name: 'Manage Routes & GPX' }).click();
-  await expect(page.getByRole('heading', { name: 'Route Library' })).toBeVisible();
+  await page.getByRole('button', { name: '暂时跳过' }).click();
+  await page.getByRole('button', { name: '路线管理与 GPX 导入' }).click();
+  await expect(page.getByRole('heading', { name: '路线管理' })).toBeVisible();
 }
 
 test('浏览器预览加载本地资源并完成 GPX 导入', async ({ page }) => {
@@ -28,6 +28,7 @@ test('浏览器预览加载本地资源并完成 GPX 导入', async ({ page }) =
   await page.locator('input[type=file][accept=".gpx"]').first().setInputFiles(sample);
   await page.getByText('金碧路', { exact: true }).click();
   await expect(page.getByRole('heading', { name: '金碧路', exact: true })).toBeVisible();
+  await expect(page.getByLabel('路线简介')).toHaveValue('从 GPX 导入');
   await page.reload();
   await openLibrary(page);
   await expect(page.getByText('金碧路', { exact: true })).toBeVisible();

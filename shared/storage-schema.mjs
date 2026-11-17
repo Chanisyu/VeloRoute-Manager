@@ -1,4 +1,38 @@
 export const CURRENT_VERSION = 3;
+// 仅翻译校验提示中的字段名称；JSON 键名与数据迁移规则保持原样。
+const FIELD_LABELS = {
+  "id": "标识符",
+  "id 为空或重复": "标识符为空或重复",
+  "version": "数据版本",
+  "folders/routes": "文件夹和路线列表",
+  "timestamp": "备份时间",
+  "folder": "文件夹",
+  "folder.name": "文件夹名称",
+  "folder.isExpanded": "文件夹展开状态",
+  "color": "路线或文件夹颜色",
+  "route": "路线",
+  "route.folderId 未关联有效文件夹": "路线所属文件夹不存在",
+  "route.points 至少包含两个点": "路线轨迹至少需要两个点",
+  "point": "轨迹点",
+  "point.lat": "纬度",
+  "point.lon": "经度",
+  "point.ele": "海拔",
+  "route.stats": "路线统计数据",
+  "stats.distanceKm": "路线距离",
+  "stats.elevationGainM": "累计爬升",
+  "stats.elevationLossM": "累计下降",
+  "stats.avgSlope": "平均坡度",
+  "stats.maxSlope": "最大坡度",
+  "stats.minSlope": "最小坡度",
+  "route.name": "路线名称",
+  "route.description": "路线简介",
+  "route.isVisible": "路线显示状态",
+  "settings": "应用设置",
+  "settings.mapboxApiKey": "Mapbox 访问令牌",
+  "settings.mapboxKeyValid": "访问令牌校验状态",
+  "settings.dontRemindMapbox": "不再提醒设置",
+  "settings.isComparisonMode": "文件夹对比模式"
+};
 const COLORS = ['#ef4444', '#8b5cf6', '#3b82f6'];
 
 /** 标记数据校验错误；较新版本必须阻止自动回退，避免以旧格式覆盖新数据。 */
@@ -10,9 +44,9 @@ export class DataValidationError extends Error {
   }
 }
 
-/** @param {boolean} condition 字段是否有效。 @param {string} field 错误字段。 @returns {void} 无效时抛错。 */
+/** @param {boolean} condition 字段是否有效。 @param {string} field 内部字段路径或业务错误。 @returns {void} 无效时抛错。 */
 function requireValid(condition, field) {
-  if (!condition) throw new DataValidationError(`数据无效：${field}`);
+  if (!condition) throw new DataValidationError(`数据无效：${FIELD_LABELS[field] ?? field}`);
 }
 
 /** @param {unknown} value 待校验对象。 @returns {boolean} 排除数组、空值及其他原始类型。 */

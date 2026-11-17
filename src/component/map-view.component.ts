@@ -5,6 +5,23 @@ import { FormsModule } from '@angular/forms';
 
 declare const mapboxgl: any;
 
+/** Mapbox 3.9.4 内置控件的中文文案；仅覆盖显示文本，不修改地图事件和地理数据。 */
+const MAPBOX_ZH_CN = {
+  'AttributionControl.ToggleAttribution': '显示或隐藏地图版权信息',
+  'FullscreenControl.Enter': '进入全屏',
+  'FullscreenControl.Exit': '退出全屏',
+  'GeolocateControl.FindMyLocation': '定位到当前位置',
+  'GeolocateControl.LocationNotAvailable': '无法获取当前位置',
+  'LogoControl.Title': 'Mapbox 官网',
+  'Map.Title': '地图',
+  'NavigationControl.ResetBearing': '恢复正北方向',
+  'NavigationControl.ZoomIn': '放大',
+  'NavigationControl.ZoomOut': '缩小',
+  'ScrollZoomBlocker.CtrlMessage': '按住 Ctrl 并滚动以缩放地图',
+  'ScrollZoomBlocker.CmdMessage': '按住 ⌘ 并滚动以缩放地图',
+  'TouchPanBlocker.Message': '使用双指移动地图'
+};
+
 @Component({
   selector: 'app-map-view',
   standalone: true,
@@ -20,7 +37,7 @@ declare const mapboxgl: any;
       <div class="absolute top-[110px] left-[10px] z-[400] group" (mouseenter)="handleMenuEnter()" (mouseleave)="handleMenuLeave()">
         
         <!-- Trigger Button -->
-        <div class="w-[34px] h-[34px] bg-white rounded border-2 border-[rgba(0,0,0,0.2)] bg-clip-padding flex items-center justify-center cursor-pointer hover:bg-slate-50 shadow-sm transition-colors text-slate-700">
+        <div title="切换底图" class="w-[34px] h-[34px] bg-white rounded border-2 border-[rgba(0,0,0,0.2)] bg-clip-padding flex items-center justify-center cursor-pointer hover:bg-slate-50 shadow-sm transition-colors text-slate-700">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
         </div>
 
@@ -33,12 +50,12 @@ declare const mapboxgl: any;
                 <div class="bg-white shadow-lg rounded border border-slate-200 overflow-hidden">
                     <div class="p-1 space-y-1">
                         <button (click)="changeBaseLayer('mapbox_outdoors')" [class.bg-blue-50]="currentLayer === 'mapbox_outdoors'" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-green-100"></span> Outdoors (3D)
+                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-green-100"></span> 户外地图（3D）
                         </button>
                         
                         <!-- OpenStreetMap Option -->
                         <button (click)="changeBaseLayer('osm')" [class.bg-blue-50]="currentLayer === 'osm'" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-orange-100"></span> OpenStreetMap
+                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-orange-100"></span> OpenStreetMap（标准地图）
                         </button>
                     </div>
                 </div>
@@ -49,9 +66,9 @@ declare const mapboxgl: any;
       <!-- Quick Toggle Overlay (Top Right) -->
       <div class="absolute top-4 right-4 z-[500] bg-white/95 backdrop-blur rounded-lg shadow-xl p-3 max-h-[60%] overflow-y-auto border border-slate-200 w-72">
         <h3 class="font-bold text-slate-800 mb-3 text-xs uppercase tracking-wider flex items-center justify-between">
-            <span>Route Layers</span>
-            <button (click)="fitAllBounds()" class="text-blue-600 hover:text-blue-800 text-[10px] font-semibold border border-blue-100 bg-blue-50 px-2 py-0.5 rounded hover:bg-blue-100 transition-colors" title="Fit map to all visible routes">
-                FIT VIEW
+            <span>路线图层</span>
+            <button (click)="fitAllBounds()" class="text-blue-600 hover:text-blue-800 text-[10px] font-semibold border border-blue-100 bg-blue-50 px-2 py-0.5 rounded hover:bg-blue-100 transition-colors" title="调整视野以显示所有已勾选路线">
+                显示可见路线
             </button>
         </h3>
 
@@ -63,7 +80,7 @@ declare const mapboxgl: any;
                 (ngModelChange)="toggleComparisonMode($event)"
                 class="rounded border-slate-300 text-purple-600 focus:ring-purple-500 h-4 w-4 cursor-pointer">
             <label for="compMode" class="text-xs font-bold text-slate-700 cursor-pointer select-none">
-                Folder Comparison Mode
+                文件夹对比模式
             </label>
         </div>
         
@@ -84,7 +101,7 @@ declare const mapboxgl: any;
                     [checked]="isFolderFullyVisible(folder.id)" 
                     (change)="toggleFolderVisibility(folder.id, $event)"
                     class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3 h-3 cursor-pointer mr-1"
-                    title="Toggle all routes in folder">
+                    title="显示或隐藏该文件夹的全部路线">
             </div>
             
             @if (folder.isExpanded) {
@@ -115,7 +132,7 @@ declare const mapboxgl: any;
           (click)="onManageClick.emit()"
           class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition hover:scale-105 flex items-center gap-3 active:scale-95">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-          Manage Routes & GPX
+          路线管理与 GPX 导入
         </button>
       </div>
       
@@ -128,20 +145,20 @@ declare const mapboxgl: any;
                     <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
                         <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
                     </div>
-                    <h3 class="text-2xl font-bold text-slate-800">Setup Map Visualization</h3>
+                    <h3 class="text-2xl font-bold text-slate-800">启用地图</h3>
                     <p class="text-slate-600 mt-2">
-                        To enable high-quality 3D terrain and satellite maps, VeloRoute Manager requires a Mapbox Public Access Token.
+                        启用地图需要 Mapbox 公共访问令牌。可先跳过，稍后在设置中配置。
                     </p>
                 </div>
 
                 <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
-                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mapbox Access Token</label>
+                    <label for="mapbox-setup-token" class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mapbox 访问令牌</label>
                     <div class="relative">
                         <input 
-                            type="text" 
+                            id="mapbox-setup-token" type="text"
                             [(ngModel)]="modalKey" 
                             (keyup.enter)="validateAndSave()"
-                            placeholder="pk.eyJ1..." 
+                            placeholder="例如：pk.eyJ1…"
                             class="w-full pl-4 pr-10 py-3 rounded-lg border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all text-sm font-mono text-slate-800 shadow-sm"
                             [class.border-red-300]="hasError()"
                             (input)="hasError.set(false)"
@@ -153,7 +170,7 @@ declare const mapboxgl: any;
                         }
                     </div>
                     @if (hasError()) {
-                        <p class="text-red-500 text-xs mt-2">Invalid token. Please check and try again.</p>
+                        <p class="text-red-500 text-xs mt-2">令牌校验失败，请检查令牌或网络连接后重试。</p>
                     }
                 </div>
                 
@@ -165,14 +182,14 @@ declare const mapboxgl: any;
                         (ngModelChange)="dontRemind.set($event)"
                         class="mt-1 rounded border-slate-300 text-blue-600 focus:ring-blue-500 h-4 w-4 cursor-pointer">
                     <label for="dontRemind" class="text-sm text-slate-600 cursor-pointer select-none leading-tight">
-                        Don't ask me again <br>
-                        <span class="text-xs text-slate-400">The map will remain blank, but you can add the key later in Settings.</span>
+                        不再提醒 <br>
+                        <span class="text-xs text-slate-400">跳过后地图保持空白，可稍后在设置中配置。</span>
                     </label>
                 </div>
                 
                 <div class="flex gap-3">
                     <button (click)="dismiss()" class="flex-1 px-4 py-3 bg-white border border-slate-200 text-slate-700 font-bold rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all">
-                        Skip for now
+                        暂时跳过
                     </button>
                     <button 
                         (click)="validateAndSave()" 
@@ -184,13 +201,13 @@ declare const mapboxgl: any;
                                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                         }
-                        {{ isValidating() ? 'Verifying...' : 'Enable Map' }}
+                        {{ isValidating() ? '正在校验…' : '启用地图' }}
                     </button>
                 </div>
                 
                 <div class="mt-6 text-center">
                     <a href="https://mapbox.com" target="_blank" class="text-xs text-slate-400 hover:text-blue-600 hover:underline transition-colors">
-                        Don't have a key? Get one for free at mapbox.com
+                        前往 Mapbox 官网获取访问令牌
                     </a>
                 </div>
             </div>
@@ -310,6 +327,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
     clearTimeout(this.fadeTimer);
   }
 
+  /** @param {string} apiKey 已通过校验的访问令牌。 @returns {void} 创建使用中文控件的地图，保留原有底图与视角逻辑。 */
   private initMap(apiKey: string) {
     if (this.map) return;
 
@@ -323,6 +341,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
         const savedState = this.service.mapState();
         
         this.map = new mapboxgl.Map({
+            locale: MAPBOX_ZH_CN,
             container: this.mapContainer.nativeElement,
             style: 'mapbox://styles/mapbox/outdoors-v12',
             center: savedState ? savedState.center : [114.2477, 22.7199], 

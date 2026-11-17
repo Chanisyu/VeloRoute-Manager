@@ -16,9 +16,9 @@ function fixture(name = '原有路线') {
 
 /** @param {import('@playwright/test').Page} page 当前窗口。 @returns {Promise<void>} 进入可编辑的管理页。 */
 async function openLibrary(page) {
-  await page.getByRole('button', { name: 'Skip for now' }).click();
-  await page.getByRole('button', { name: 'Manage Routes & GPX' }).click();
-  await expect(page.getByRole('heading', { name: 'Route Library' })).toBeVisible();
+  await page.getByRole('button', { name: '暂时跳过' }).click();
+  await page.getByRole('button', { name: '路线管理与 GPX 导入' }).click();
+  await expect(page.getByRole('heading', { name: '路线管理' })).toBeVisible();
 }
 
 /**
@@ -61,8 +61,8 @@ test('浏览器保存失败显示错误，重试后保存最新内容', async ({
   });
   await page.goto('/');
   await openLibrary(page);
-  await page.getByPlaceholder('New Folder Name').fill('未保存文件夹');
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByPlaceholder('请输入文件夹名称').fill('未保存文件夹');
+  await page.getByRole('button', { name: '新建', exact: true }).click();
   await expect(page.getByLabel('保存状态')).toContainText('保存失败');
   expect(await page.evaluate(() => localStorage.getItem('velo_data'))).toBeNull();
   await page.evaluate(() => { window.__failSaves = false; });
@@ -90,11 +90,11 @@ test('在途写入期间继续编辑，旧请求完成后只保存最新快照',
   });
   await page.goto('/');
   await openLibrary(page);
-  await page.getByPlaceholder('New Folder Name').fill('第一次写入');
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByPlaceholder('请输入文件夹名称').fill('第一次写入');
+  await page.getByRole('button', { name: '新建', exact: true }).click();
   await expect(page.getByLabel('保存状态')).toContainText('正在保存');
-  await page.getByPlaceholder('New Folder Name').fill('最新修改');
-  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await page.getByPlaceholder('请输入文件夹名称').fill('最新修改');
+  await page.getByRole('button', { name: '新建', exact: true }).click();
   await expect(page.getByLabel('保存状态')).toContainText('等待保存');
   await page.evaluate(() => window.__releaseWrite());
   await expect(page.getByLabel('保存状态')).toContainText('已保存');
@@ -113,7 +113,7 @@ test('桌面旧数据迁移及非法备份拒绝，当前路线与文件不变',
     const invalid = fixture('不应出现的路线');
     invalid.routes[0].folderId = 'missing';
     await page.locator('input[accept=".json"]').setInputFiles({ name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(invalid)) });
-    await expect(page.getByLabel('保存状态')).toContainText('folderId');
+    await expect(page.getByLabel('保存状态')).toContainText('路线所属文件夹');
     await expect(page.getByText('原有路线', { exact: true })).toBeVisible();
     expect(await fs.readFile(file, 'utf8')).toBe(before);
   }, { 'storage.json': JSON.stringify(fixture()) });
@@ -125,8 +125,8 @@ test('主文件损坏时读取备份，首次编辑保存保护损坏原文', as
     await expect(page.getByText('备份中的路线', { exact: true })).toBeVisible();
     await expect(page.getByLabel('保存状态')).toContainText('已读取上一份有效备份');
     expect(await fs.readFile(path.join(dir, 'storage.json'), 'utf8')).toBe('{broken');
-    await page.getByPlaceholder('New Folder Name').fill('恢复后新增');
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByPlaceholder('请输入文件夹名称').fill('恢复后新增');
+    await page.getByRole('button', { name: '新建', exact: true }).click();
     await expect(page.getByLabel('保存状态')).toContainText('已保存');
     await expect.poll(async () => (await fs.readdir(dir)).some(name => name.includes('.preserved-'))).toBe(true);
     expect(JSON.parse(await fs.readFile(path.join(dir, 'storage.json.bak'), 'utf8')).routes[0].name).toBe('备份中的路线');
@@ -136,7 +136,7 @@ test('主文件损坏时读取备份，首次编辑保存保护损坏原文', as
 test('读取失败阻止编辑，用户导入有效备份后解除保护', async () => {
   await withDesktop(async ({ page, dir }) => {
     await expect(page.getByRole('heading', { name: '数据读取失败' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Manage Routes & GPX' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '路线管理与 GPX 导入' })).toHaveCount(0);
     expect(await fs.readFile(path.join(dir, 'storage.json'), 'utf8')).toBe('{broken');
     await page.getByTestId('recovery-file').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture('手动恢复路线'))) });
     await openLibrary(page);
@@ -174,11 +174,11 @@ test('桌面保存失败不关闭窗口，解除占用后可重试保存', async
     await desktop.evaluate(({ dialog }) => {
       dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
     });
-    await page.getByPlaceholder('New Folder Name').fill('失败后重试');
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await page.getByPlaceholder('请输入文件夹名称').fill('失败后重试');
+    await page.getByRole('button', { name: '新建', exact: true }).click();
     await expect(page.getByLabel('保存状态')).toContainText('保存失败');
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());
-    await expect(page.getByRole('heading', { name: 'Route Library' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '路线管理' })).toBeVisible();
     expect(JSON.parse(await fs.readFile(held, 'utf8')).routes[0].name).toBe('原有路线');
     // 只移除本测试创建的空目录，不涉及任何用户文件或递归清理。
     await fs.rmdir(file);
@@ -229,4 +229,33 @@ test('读取备份期间关闭窗口，先完成恢复事务再退出', async ()
     await closed;
     expect(JSON.parse(await fs.readFile(path.join(dir, 'storage.json'), 'utf8')).routes[0].name).toBe('退出前恢复');
   }, { 'storage.json': JSON.stringify(fixture()) });
+});
+
+test('中文界面保留历史英文名称与简介，编辑后仍按原数据格式保存', async ({}, testInfo) => {
+  const legacy = fixture('Evening Ride');
+  legacy.folders[0].name = 'To Ride';
+  legacy.routes[0].description = 'Imported from GPX';
+  await withDesktop(async ({ desktop, page, dir }) => {
+    await page.screenshot({ path: testInfo.outputPath('中文地图启用.png') });
+    await openLibrary(page);
+    await page.getByText('Evening Ride', { exact: true }).click();
+    await expect(page.getByLabel('路线名称')).toHaveValue('Evening Ride');
+    await expect(page.getByLabel('路线简介')).toHaveValue('Imported from GPX');
+    await page.getByPlaceholder('请输入文件夹名称').fill('新增中文目录');
+    await page.getByRole('button', { name: '新建', exact: true }).click();
+    await expect(page.getByLabel('保存状态')).toContainText('已保存');
+    const saved = JSON.parse(await fs.readFile(path.join(dir, 'storage.json'), 'utf8'));
+    expect(saved.folders[0].name).toBe('To Ride');
+    expect(saved.routes[0].name).toBe('Evening Ride');
+    expect(saved.routes[0].description).toBe('Imported from GPX');
+    expect(saved.routes[0].points).toEqual(legacy.routes[0].points);
+    expect(saved.routes[0].stats).toEqual(legacy.routes[0].stats);
+    await page.screenshot({ path: testInfo.outputPath('中文路线管理.png') });
+    await page.getByRole('button', { name: '设置', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Mapbox 访问令牌')).toHaveValue('');
+    await page.screenshot({ path: testInfo.outputPath('中文设置页.png') });
+    const menuLabels = await desktop.evaluate(({ Menu }) => Menu.getApplicationMenu().items.map(item => item.label));
+    expect(menuLabels).toEqual(['文件', '编辑', '视图', '窗口', '帮助']);
+  }, { 'storage.json': JSON.stringify(legacy) });
 });

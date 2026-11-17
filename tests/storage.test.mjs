@@ -39,7 +39,8 @@ class MemoryStorage {
   getItem(key) { return this.values.get(key) ?? null; }
   /** @param {string} key 键名。 @param {string} value 值。 @returns {void} 可模拟主键写入失败。 */
   setItem(key, value) {
-    if (this.failPrimary && key === DATA_KEY) throw new Error('QuotaExceededError');
+    // 使用带数字 code 的真实浏览器异常，验证中文反馈也兼容 DOMException 的字段语义。
+    if (this.failPrimary && key === DATA_KEY) throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
     this.values.set(key, value);
   }
 }
@@ -204,7 +205,9 @@ test('浏览器保存容量失败可重试，正式快照仍为原值', () => {
   saveBrowserData(storage, fixture('旧值'));
   const original = storage.getItem(DATA_KEY);
   storage.failPrimary = true;
-  assert.equal(saveBrowserData(storage, fixture('新值')).success, false);
+  const failed = saveBrowserData(storage, fixture('新值'));
+  assert.equal(failed.success, false);
+  assert.match(failed.error, /浏览器存储空间不足/);
   assert.equal(storage.getItem(DATA_KEY), original);
   assert.equal(storage.getItem(BACKUP_KEY), original);
   storage.failPrimary = false;

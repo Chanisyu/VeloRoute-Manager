@@ -1,5 +1,5 @@
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -7,6 +7,37 @@ const { randomUUID } = require('crypto');
 
 let win = null;
 
+// 仅设置当前应用的 Chromium 语言，使原生网页提示和文件输入控件与中文界面一致。
+app.commandLine.appendSwitch('lang', 'zh-CN');
+
+/** @returns {void} 使用中文标注桌面菜单，编辑、缩放和窗口动作仍交由 Electron 标准角色处理。 */
+function configureChineseMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { label: '文件', submenu: [{ label: '关闭窗口', role: 'close' }] },
+    { label: '编辑', submenu: [
+      { label: '撤销', role: 'undo' }, { label: '重做', role: 'redo' }, { type: 'separator' },
+      { label: '剪切', role: 'cut' }, { label: '复制', role: 'copy' },
+      { label: '粘贴', role: 'paste' }, { label: '全选', role: 'selectAll' }
+    ] },
+    { label: '视图', submenu: [
+      { label: '刷新', role: 'reload' }, { label: '强制刷新', role: 'forceReload' },
+      { label: '开发者工具', role: 'toggleDevTools' }, { type: 'separator' },
+      { label: '实际大小', role: 'resetZoom' }, { label: '放大', role: 'zoomIn' },
+      { label: '缩小', role: 'zoomOut' }, { label: '切换全屏', role: 'togglefullscreen' }
+    ] },
+    { label: '窗口', submenu: [{ label: '最小化', role: 'minimize' }, { label: '最大化或还原', role: 'zoom' }] },
+    { label: '帮助', submenu: [{ label: '关于 VeloRoute Manager', click: showChineseAbout }] }
+  ]));
+}
+
+/** @returns {void} 显示中文关于信息，版本读取应用元数据，避免与安装包版本不一致。 */
+function showChineseAbout() {
+  if (!win) return;
+  void dialog.showMessageBox(win, {
+    type: 'info', title: '关于 VeloRoute Manager', message: 'VeloRoute Manager',
+    detail: `版本：${app.getVersion()}\n本地骑行路线管理与分析工具。`, buttons: ['确定']
+  });
+}
 // 未打包运行始终使用独立数据目录；测试可指定临时目录，安装版忽略这些变量。
 // 必须在 ready 事件前设置 userData，使 Chromium 缓存与 localStorage 一并隔离。
 if (!app.isPackaged) {
@@ -141,7 +172,7 @@ ipcMain.on('complete-close', async (event, requestId, success) => {
 
 // 单实例锁按 userData 隔离，避免两个本应用进程并发覆盖同一存储文件。
 if (!app.requestSingleInstanceLock()) app.quit();
-else app.on('ready', createWindow);
+else app.on('ready', () => { configureChineseMenu(); createWindow(); });
 app.on('second-instance', () => {
   if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
 });

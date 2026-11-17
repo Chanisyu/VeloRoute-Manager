@@ -16,19 +16,19 @@ import { FormsModule } from '@angular/forms';
         <div class="p-4 border-b border-slate-200 bg-white shadow-sm z-10">
           <button (click)="onBack.emit()" class="text-blue-600 font-semibold flex items-center gap-2 mb-4 hover:underline">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-            Back to Map
+            返回地图
           </button>
           
           <div class="flex items-center justify-between mb-2">
-            <h2 class="text-xl font-bold text-slate-800">Route Library</h2>
-            <button (click)="onSettings.emit()" class="text-slate-500 hover:text-slate-800 p-1.5 rounded-md hover:bg-slate-100 transition-colors" title="Settings">
+            <h2 class="text-xl font-bold text-slate-800">路线管理</h2>
+            <button (click)="onSettings.emit()" class="text-slate-500 hover:text-slate-800 p-1.5 rounded-md hover:bg-slate-100 transition-colors" title="设置" aria-label="设置">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
             </button>
           </div>
           
           <div class="flex gap-2">
-            <input #folderInput type="text" placeholder="New Folder Name" class="flex-1 px-3 py-2 border rounded-md text-sm bg-slate-700 text-white placeholder-slate-400 border-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-500">
-            <button (click)="addFolder(folderInput.value); folderInput.value=''" class="bg-slate-800 text-white px-3 py-2 rounded-md text-sm hover:bg-slate-700">Add</button>
+            <input #folderInput type="text" placeholder="请输入文件夹名称" class="flex-1 px-3 py-2 border rounded-md text-sm bg-slate-700 text-white placeholder-slate-400 border-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-500">
+            <button (click)="addFolder(folderInput.value); folderInput.value=''" class="bg-slate-800 text-white px-3 py-2 rounded-md text-sm hover:bg-slate-700">新建</button>
           </div>
         </div>
 
@@ -49,10 +49,10 @@ import { FormsModule } from '@angular/forms';
                             class="flex-1 text-sm border border-blue-500 rounded px-2 py-1 outline-none shadow-sm focus:ring-1 focus:ring-blue-500 bg-slate-700 text-white"
                             autofocus>
                         
-                        <button (click)="saveRename(folder.id, renameInput.value)" class="text-green-600 p-1.5 hover:bg-green-50 rounded" title="Save">
+                        <button (click)="saveRename(folder.id, renameInput.value)" class="text-green-600 p-1.5 hover:bg-green-50 rounded" title="确认重命名" aria-label="确认重命名">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                         </button>
-                         <button (click)="editingFolderId.set(null)" class="text-slate-400 p-1.5 hover:bg-slate-100 rounded" title="Cancel">
+                         <button (click)="editingFolderId.set(null)" class="text-slate-400 p-1.5 hover:bg-slate-100 rounded" title="取消重命名" aria-label="取消重命名">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                         </button>
                     </div>
@@ -69,10 +69,10 @@ import { FormsModule } from '@angular/forms';
                      </div>
                     
                     <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                        <button (click)="startRenaming($event, folder.id)" class="text-slate-300 hover:text-blue-500 p-1 bg-white/50 rounded" title="Rename Folder">
+                        <button (click)="startRenaming($event, folder.id)" class="text-slate-300 hover:text-blue-500 p-1 bg-white/50 rounded" title="重命名文件夹" aria-label="重命名文件夹">
                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                         </button>
-                        <button (click)="deleteFolder($event, folder.id)" class="text-slate-300 hover:text-red-500 p-1 bg-white/50 rounded" title="Delete Folder">
+                        <button (click)="deleteFolder($event, folder.id)" class="text-slate-300 hover:text-red-500 p-1 bg-white/50 rounded" title="删除文件夹" aria-label="删除文件夹">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                         </button>
                     </div>
@@ -105,7 +105,7 @@ import { FormsModule } from '@angular/forms';
                     <div class="pt-2 mt-2 border-t border-slate-200/50">
                         <label class="flex items-center justify-center gap-2 w-full border border-dashed border-slate-300 rounded p-2 text-xs text-slate-500 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-white transition-colors">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                            Upload GPX(s)
+                            导入 GPX 文件
                             <input type="file" accept=".gpx" multiple class="hidden" (change)="onFileSelected($event, folder.id)">
                         </label>
                     </div>
@@ -116,13 +116,13 @@ import { FormsModule } from '@angular/forms';
         </div>
 
         <div class="p-4 border-t border-slate-200 bg-white">
-            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Data Management</h3>
+            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">数据备份</h3>
             <div class="flex gap-2">
                 <button (click)="service.downloadBackup()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-2 rounded text-xs font-medium flex items-center justify-center gap-1 transition-colors">
-                    Export
+                    导出备份
                 </button>
                 <label class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 py-2 px-2 rounded text-xs font-medium flex items-center justify-center gap-1 cursor-pointer transition-colors">
-                    Import
+                    恢复备份
                     <input type="file" accept=".json" class="hidden" (change)="onRestore($event)">
                 </label>
             </div>
@@ -149,19 +149,19 @@ import { FormsModule } from '@angular/forms';
 
                <div class="grid grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-700">
                   <div>
-                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">Elev Gain</div>
+                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">累计爬升</div>
                     <div class="text-xl font-semibold">{{ route.stats.elevationGainM }} m</div>
                   </div>
                   <div>
-                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">Elev Loss</div>
+                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">累计下降</div>
                     <div class="text-xl font-semibold">{{ route.stats.elevationLossM }} m</div>
                   </div>
                   <div>
-                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">Avg Slope</div>
+                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">平均坡度</div>
                     <div class="text-xl font-semibold">{{ route.stats.avgSlope }}%</div>
                   </div>
                    <div>
-                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">Max Slope</div>
+                    <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">最大坡度</div>
                     <div class="text-xl font-semibold text-red-400">{{ route.stats.maxSlope }}%</div>
                   </div>
                </div>
@@ -169,20 +169,20 @@ import { FormsModule } from '@angular/forms';
 
             <!-- Edit Form -->
             <div class="p-8 max-w-3xl mx-auto">
-                <h3 class="text-lg font-bold text-slate-800 mb-6 border-b pb-2">Edit Route Details</h3>
+                <h3 class="text-lg font-bold text-slate-800 mb-6 border-b pb-2">编辑路线信息</h3>
                 
                 <div class="space-y-6">
                     <div>
-                        <label class="block text-sm font-semibold text-slate-600 mb-2">Route Name</label>
-                        <input type="text" 
+                        <label for="route-name" class="block text-sm font-semibold text-slate-600 mb-2">路线名称</label>
+                        <input id="route-name" type="text"
                             [ngModel]="route.name" 
                             (ngModelChange)="updateName(route, $event)" 
                             class="w-full px-4 py-3 rounded-lg bg-slate-800 text-white border border-slate-700 focus:ring-2 focus:ring-blue-500 focus:outline-none placeholder-slate-400 shadow-inner transition-colors">
                     </div>
 
                     <div>
-                        <label class="block text-sm font-semibold text-slate-600 mb-2">Description</label>
-                        <textarea 
+                        <label for="route-description" class="block text-sm font-semibold text-slate-600 mb-2">路线简介</label>
+                        <textarea id="route-description"
                             [ngModel]="route.description" 
                             (ngModelChange)="updateDesc(route, $event)" 
                             rows="6" 
@@ -190,8 +190,8 @@ import { FormsModule } from '@angular/forms';
                     </div>
 
                     <div>
-                        <label class="block text-sm font-semibold text-slate-600 mb-2">Move to Folder</label>
-                        <select [ngModel]="route.folderId" (ngModelChange)="updateFolder(route, $event)" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-slate-800 cursor-pointer">
+                        <label for="route-folder" class="block text-sm font-semibold text-slate-600 mb-2">移动到文件夹</label>
+                        <select id="route-folder" [ngModel]="route.folderId" (ngModelChange)="updateFolder(route, $event)" class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white text-slate-800 cursor-pointer">
                             @for (f of service.folders(); track f.id) {
                                 <option [value]="f.id">{{ f.name }}</option>
                             }
@@ -201,7 +201,7 @@ import { FormsModule } from '@angular/forms';
                     <div class="pt-8 mt-8 border-t border-slate-100 flex justify-end">
                         <button (click)="deleteRoute(route.id)" class="px-5 py-2.5 bg-red-50 text-red-600 rounded-lg hover:bg-red-600 hover:text-white transition-all font-medium flex items-center gap-2">
                              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                             Delete this Route
+                             删除此路线
                         </button>
                     </div>
                 </div>
@@ -212,8 +212,8 @@ import { FormsModule } from '@angular/forms';
             <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 shadow-sm">
                 <svg class="w-10 h-10 text-slate-300" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd"/></svg>
             </div>
-            <h3 class="text-xl font-semibold text-slate-600 mb-2">No Route Selected</h3>
-            <p class="text-slate-500 max-w-sm">Select a route from the sidebar to view details, analyze stats, or edit information.</p>
+            <h3 class="text-xl font-semibold text-slate-600 mb-2">尚未选择路线</h3>
+            <p class="text-slate-500 max-w-sm">请从左侧选择一条路线，查看统计数据或编辑路线信息。</p>
           </div>
         }
       </div>
@@ -244,8 +244,13 @@ export class ManagementViewComponent implements OnInit {
     return this.service.routes().filter(r => r.folderId === folderId);
   }
 
+  /**
+   * 根据所属 ID 显示文件夹名称，不改写用户已有名称。
+   * @param id 路线所属文件夹标识符。
+   * @returns 已有名称；关联缺失或名称为空时使用中文占位。
+   */
   getFolderName(id: string) {
-    return this.service.folders().find(f => f.id === id)?.name || 'Unknown';
+    return this.service.folders().find(f => f.id === id)?.name || '未知文件夹';
   }
 
   addFolder(name: string) {
@@ -265,9 +270,15 @@ export class ManagementViewComponent implements OnInit {
       this.editingFolderId.set(null);
   }
 
+  /**
+   * 经中文确认后删除文件夹及其路线；取消不改动数据。
+   * @param event 删除按钮事件，阻止冒泡以避免切换展开状态。
+   * @param id 待删除文件夹标识符。
+   * @returns 无返回值；实际保存结果由全局状态区反馈。
+   */
   deleteFolder(event: Event, id: string) {
       event.stopPropagation();
-      if(confirm('Are you sure you want to delete this folder and all its routes?')) {
+      if(confirm('确定删除此文件夹及其中的全部路线吗？')) {
           this.service.deleteFolder(id);
       }
   }
@@ -285,16 +296,21 @@ export class ManagementViewComponent implements OnInit {
     }
   }
 
+  /**
+   * 选择 JSON 后确认全量恢复，以实际持久化结果显示中文反馈。
+   * @param event 文件输入事件，仅处理首个文件；无文件时不执行恢复。
+   * @returns 恢复或取消后完成；清空输入以允许再次选择同一文件。
+   */
   async onRestore(event: Event) {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       const file = input.files[0];
-      if (confirm('Restoring will OVERWRITE all current data. Continue?')) {
+      if (confirm('恢复备份将替换当前全部文件夹、路线和设置。是否继续？')) {
           const success = await this.service.restoreBackup(file);
           if (success) {
-            alert('Data restored successfully!');
+            alert('备份已恢复并保存。');
           } else {
-            alert('Failed to restore data.');
+            alert('备份恢复失败，请查看保存状态区的详细提示。');
           }
       }
       input.value = '';
@@ -313,8 +329,13 @@ export class ManagementViewComponent implements OnInit {
     this.service.updateRoute({ ...route, folderId });
   }
 
+  /**
+   * 经中文确认后删除路线并清空当前选择；取消时保留数据和选择。
+   * @param id 待删除路线标识符。
+   * @returns 无返回值；实际保存结果由全局状态区反馈。
+   */
   deleteRoute(id: string) {
-    if(confirm('Are you sure you want to delete this route?')) {
+    if(confirm('确定删除此路线吗？')) {
         this.service.deleteRoute(id);
         this.selectedRouteId.set(null);
     }

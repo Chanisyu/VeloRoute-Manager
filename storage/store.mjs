@@ -1,3 +1,4 @@
+import { describeError } from '../shared/user-messages.mjs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -94,7 +95,7 @@ export class AtomicStore {
   save(input, restore = false) {
     let data;
     try { data = normalizeData(input); }
-    catch (error) { return Promise.resolve({ success: false, error: error.message }); }
+    catch (error) { return Promise.resolve({ success: false, error: describeError(error) }); }
     return this.enqueue(async () => {
       try {
         if (!restore && !this.writable) throw new Error('数据尚未正确加载，禁止自动覆盖。');
@@ -115,7 +116,7 @@ export class AtomicStore {
         this.repairAllowed = false;
         return { success: true };
       } catch (error) {
-        return { success: false, error: `保存失败：${error.message}` };
+        return { success: false, error: `保存失败：${describeError(error)}` };
       }
     });
   }

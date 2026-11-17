@@ -1,3 +1,4 @@
+import { describeError } from '../../shared/user-messages.mjs';
 import { Injectable, signal, effect, NgZone, inject } from '@angular/core';
 import {
   normalizeData, CURRENT_VERSION,
@@ -29,11 +30,11 @@ declare global {
   providedIn: 'root'
 })
 export class RouteService {
-  // State
+  // 中文默认文案只用于首次无数据启动；读取现有存储时原样保留用户名称和简介。
   folders = signal<Folder[]>([
-    { id: '1', name: 'To Ride', isExpanded: true, color: '#ef4444' },
-    { id: '2', name: 'Completed', isExpanded: true, color: '#8b5cf6' }, // Changed from green to violet for better contrast
-    { id: '3', name: 'Hiking Plans', isExpanded: true, color: '#3b82f6' }
+    { id: '1', name: '待骑行', isExpanded: true, color: '#ef4444' },
+    { id: '2', name: '已完成', isExpanded: true, color: '#8b5cf6' }, // Changed from green to violet for better contrast
+    { id: '3', name: '徒步计划', isExpanded: true, color: '#3b82f6' }
   ]);
 
   routes = signal<RouteData[]>([]);
@@ -171,7 +172,7 @@ export class RouteService {
       const key = this.appSettings().mapboxApiKey;
       if (key) void this.validateMapboxKey(key);
     } catch (error) {
-      this.loadError.set(error instanceof Error ? error.message : '读取数据失败');
+      this.loadError.set(describeError(error, '读取数据失败，请重试。'));
       this.saveStatus.set('error');
     } finally { this.initialized.set(true); }
   }
@@ -217,7 +218,7 @@ export class RouteService {
         this.persisted = JSON.stringify(data);
       } catch (error) {
         if (!this.pending) this.pending = data;
-        this.saveError.set(error instanceof Error ? error.message : '保存失败');
+        this.saveError.set(describeError(error, '保存失败，请重试。'));
         this.saveStatus.set('error');
         return false;
       }
@@ -265,7 +266,7 @@ export class RouteService {
             this.updateSettings({ mapboxApiKey: key, mapboxKeyValid: true });
             return true;
         } else {
-            throw new Error('Invalid key');
+            throw new Error('访问令牌校验失败');
         }
     } catch (e) {
         this.updateSettings({ mapboxKeyValid: false });
@@ -370,7 +371,7 @@ export class RouteService {
     let data: AppData;
     try { data = normalizeData(JSON.parse(await file.text())); }
     catch (error) {
-      this.operationError.set(error instanceof Error ? error.message : '备份格式无效');
+      this.operationError.set(describeError(error, '备份格式无效，请选择正确的 JSON 文件。'));
       return false;
     }
     await Promise.all([...this.imports]);
@@ -392,7 +393,7 @@ export class RouteService {
       this.saveStatus.set('saved');
       return true;
     } catch (error) {
-      this.operationError.set(error instanceof Error ? error.message : '恢复保存失败');
+      this.operationError.set(describeError(error, '恢复备份时保存失败，请重试。'));
       // 恢复失败时保留原界面状态及其待保存内容，用户可以继续导出或重试。
       if (!this.loadError() && this.hasChanges()) {
         this.pending = this.snapshot();
@@ -439,14 +440,14 @@ export class RouteService {
         const candidate: RouteData = {
           id: crypto.randomUUID(),
           name: file.name.replace('.gpx', ''),
-          description: 'Imported from GPX',
+          description: '从 GPX 导入',
           folderId, points, stats, color, isVisible: true
         };
         // 在改动共享状态前校验坐标及统计，避免一个非法文件使整份数据无法保存。
         normalizeData({ ...this.snapshot(), routes: [...this.routes(), ...newRoutes, candidate] });
         newRoutes.push(candidate);
       } catch (err) {
-        this.operationError.set(err instanceof Error ? err.message : 'GPX 导入失败');
+        this.operationError.set(describeError(err, 'GPX 导入失败，请检查文件内容。'));
       }
     }
     if (newRoutes.length > 0 && this.folders().some(folder => folder.id === folderId)) {

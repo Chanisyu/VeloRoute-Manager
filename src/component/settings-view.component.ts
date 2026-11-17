@@ -12,10 +12,10 @@ import { RouteService } from '../services/route.service';
     <div class="max-w-4xl mx-auto p-8 h-full flex flex-col">
       <!-- Header -->
       <div class="flex items-center gap-4 mb-8">
-        <button (click)="onBack.emit()" class="p-2 rounded-full hover:bg-slate-200 transition-colors">
+        <button aria-label="返回路线管理" title="返回路线管理" (click)="onBack.emit()" class="p-2 rounded-full hover:bg-slate-200 transition-colors">
           <svg class="w-6 h-6 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
         </button>
-        <h1 class="text-3xl font-bold text-slate-800">Settings</h1>
+        <h1 class="text-3xl font-bold text-slate-800">设置</h1>
       </div>
 
       <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -24,17 +24,17 @@ import { RouteService } from '../services/route.service';
         <div class="p-6 border-b border-slate-100">
             <h2 class="text-xl font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
-                Map Provider
+                地图设置
             </h2>
             
             <div class="space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Mapbox API Key (Access Token)</label>
+                    <label for="settings-mapbox-token" class="block text-sm font-medium text-slate-700 mb-1">Mapbox 访问令牌</label>
                     <div class="flex gap-2">
                         <input 
-                            type="text" 
+                            id="settings-mapbox-token" type="text"
                             [(ngModel)]="tempKey" 
-                            placeholder="pk.eyJ1..." 
+                            placeholder="例如：pk.eyJ1…"
                             class="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-slate-700 text-white placeholder-slate-400 border-slate-600"
                             [class.border-red-500]="!isValid() && hasTried()"
                             [class.border-green-500]="isValid()"
@@ -43,25 +43,25 @@ import { RouteService } from '../services/route.service';
                             (click)="validateKey()" 
                             [disabled]="isValidating()"
                             class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-wait font-medium transition-colors">
-                            {{ isValidating() ? 'Checking...' : 'Validate & Save' }}
+                            {{ isValidating() ? '正在校验…' : '校验并保存' }}
                         </button>
                     </div>
                     
                     @if (service.appSettings().mapboxKeyValid) {
                          <p class="mt-2 text-sm text-green-600 flex items-center gap-1">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                            API Key is valid. Mapbox layers are enabled.
+                            访问令牌校验通过，地图功能已启用。
                          </p>
                     } @else if (service.appSettings().mapboxApiKey && !service.appSettings().mapboxKeyValid) {
                         <p class="mt-2 text-sm text-red-500 flex items-center gap-1 font-medium">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                            Invalid API Key. Please check your token.
+                            访问令牌校验失败，请检查令牌或网络连接。
                         </p>
                     }
                     
                     <p class="mt-2 text-xs text-slate-400">
-                        A Mapbox API key is required to access Satellite and Outdoors map layers. 
-                        <a href="https://mapbox.com" target="_blank" class="text-blue-500 hover:underline">Get a key here</a>.
+                        显示地图需要有效的 Mapbox 公共访问令牌。
+                        <a href="https://mapbox.com" target="_blank" class="text-blue-500 hover:underline">前往官网获取</a>。
                     </p>
                 </div>
             </div>
@@ -69,9 +69,9 @@ import { RouteService } from '../services/route.service';
 
         <!-- About -->
         <div class="p-6 bg-slate-50">
-            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">About</h3>
-            <p class="text-slate-600 text-sm">VeloRoute Manager v1.2</p>
-            <p class="text-slate-500 text-xs mt-1">Local-first cycling route analysis and organization.</p>
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-2">关于</h3>
+            <p class="text-slate-600 text-sm">VeloRoute Manager</p>
+            <p class="text-slate-500 text-xs mt-1">本地骑行路线管理与分析工具。</p>
         </div>
 
       </div>

@@ -1,3 +1,4 @@
+import { describeError } from './user-messages.mjs';
 import { normalizeData, CURRENT_VERSION } from './storage-schema.mjs';
 
 export const DATA_KEY = 'velo_data';
@@ -33,7 +34,7 @@ export function loadBrowserData(storage) {
       data: normalizeData({ folders: JSON.parse(folders ?? '[]'), routes: JSON.parse(routes ?? '[]'), settings: JSON.parse(settings ?? '{}') })
     };
   } catch (error) {
-    return { status: 'error', error: `无法读取浏览器数据：${error.message}。已暂停自动保存，请重试或导入有效备份。` };
+    return { status: 'error', error: `无法读取浏览器数据：${describeError(error).replace(/。$/, '')}。已暂停自动保存，请重试或导入有效备份。` };
   }
 }
 
@@ -54,5 +55,5 @@ export function saveBrowserData(storage, input, restore = false) {
     }
     storage.setItem(DATA_KEY, JSON.stringify(data));
     return { success: true };
-  } catch (error) { return { success: false, error: `保存失败：${error.message}` }; }
+  } catch (error) { return { success: false, error: `保存失败：${describeError(error)}` }; }
 }
