@@ -27,7 +27,7 @@
 
 ## 数据与地图边界
 
-- 界面统一使用简体中文，Mapbox 控件和桌面菜单亦提供中文；保留品牌、格式名称及单位。仅首次默认目录、新导入简介使用中文，不批量翻译已有用户名称或简介，也不更改 JSON 字段名。`shared/user-messages.mjs` 统一平台错误的中文说明。
+- 界面统一使用简体中文，Mapbox 控件和桌面菜单亦提供中文；保留品牌、格式名称、单位及底图英文名称（`Outdoors (3D)`、`OpenStreetMap`）。仅首次默认目录、新导入简介使用中文，不批量翻译已有用户名称或简介，也不更改 JSON 字段名。`shared/user-messages.mjs` 统一平台错误的中文说明。
 - `RouteData` 保存 UUID、所属 `folderId`、名称/描述、`points`、`stats`、颜色及显隐状态；点格式为 `{lat, lon, ele}`，GeoJSON 坐标顺序为 `[lon, lat]`。删除文件夹会连同路线删除。
 - GPX 仅提取 `trkpt`，缺失高程按 0 处理，不保留原始 XML、时间或扩展字段；不同 `trk/trkseg` 被合并，不支持 `rtept/wpt`。距离使用 Haversine；平均坡度是有效点段有符号坡度的算术平均，坡度绝对值 ≥50% 的段不参与坡度统计。
 - 桌面为 `storage.json`（v3，保留 folders/routes/settings）；`.bak` 为上一版有效数据。未打包运行仍使用独立开发目录。主进程排队异步写入、同步临时文件后替换；读取损坏时禁止默认数据覆盖。恢复原文保存在 `.preserved-*.json`，详情见 [STORAGE.md](STORAGE.md)。

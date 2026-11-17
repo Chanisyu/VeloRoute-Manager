@@ -33,7 +33,7 @@ const MAPBOX_ZH_CN = {
       <!-- 'image-rendering: optimize-contrast' helps with sharpness on some WebKit screens -->
       <div #mapContainer class="w-full h-full z-0" style="image-rendering: -webkit-optimize-contrast;"></div>
 
-      <!-- Layer Switcher -->
+      <!-- 底图切换：选项名称保留英文原名，操作提示使用中文。 -->
       <div class="absolute top-[110px] left-[10px] z-[400] group" (mouseenter)="handleMenuEnter()" (mouseleave)="handleMenuLeave()">
         
         <!-- Trigger Button -->
@@ -50,12 +50,12 @@ const MAPBOX_ZH_CN = {
                 <div class="bg-white shadow-lg rounded border border-slate-200 overflow-hidden">
                     <div class="p-1 space-y-1">
                         <button (click)="changeBaseLayer('mapbox_outdoors')" [class.bg-blue-50]="currentLayer === 'mapbox_outdoors'" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-green-100"></span> 户外地图（3D）
+                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-green-100"></span> Outdoors (3D)
                         </button>
                         
                         <!-- OpenStreetMap Option -->
                         <button (click)="changeBaseLayer('osm')" [class.bg-blue-50]="currentLayer === 'osm'" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 flex items-center gap-2">
-                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-orange-100"></span> OpenStreetMap（标准地图）
+                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-orange-100"></span> OpenStreetMap
                         </button>
                     </div>
                 </div>
