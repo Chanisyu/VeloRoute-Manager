@@ -1,73 +1,30 @@
-
-import { Injectable, signal, computed, effect } from '@angular/core';
-
-export interface RouteStats {
-  distanceKm: number;
-  elevationGainM: number;
-  elevationLossM: number;
-  avgSlope: number;
-  maxSlope: number;
-  minSlope: number;
-}
-
-export interface RoutePoint {
-  lat: number;
-  lon: number;
-  ele: number;
-}
-
-export interface RouteData {
-  id: string;
-  name: string;
-  description: string;
-  folderId: string;
-  points: RoutePoint[];
-  stats: RouteStats;
-  color: string;
-  isVisible: boolean;
-}
-
-export interface Folder {
-  id: string;
-  name: string;
-  isExpanded: boolean;
-  // Generated color for Comparison Mode
-  color?: string; 
-}
-
-export interface AppSettings {
-  mapboxApiKey: string;
-  mapboxKeyValid: boolean;
-  dontRemindMapbox: boolean;
-  isComparisonMode: boolean; // UI state for map
-}
+import { Injectable, signal, effect, NgZone, inject } from '@angular/core';
+import {
+  normalizeData, CURRENT_VERSION,
+  type RouteStats, type RoutePoint, type RouteData, type Folder, type AppSettings,
+  type AppData, type AppDataBackup, type LoadResult, type SaveResult
+} from '../../shared/storage-schema.mjs';
+import { loadBrowserData, saveBrowserData } from '../../shared/browser-storage.mjs';
+export type { RouteData, Folder, RouteStats } from '../../shared/storage-schema.mjs';
 
 export interface MapState {
-  center: { lng: number; lat: number };
-  zoom: number;
-  pitch: number;
-  bearing: number;
+  center: { lng: number; lat: number }; zoom: number; pitch: number; bearing: number;
 }
 
-export interface AppDataBackup {
-  version: number;
-  timestamp: number;
-  folders: Folder[];
-  routes: RouteData[];
-  settings?: AppSettings;
-}
-
+/** 仅暴露固定数据操作与退出握手，不允许渲染进程传入文件路径或任意 IPC 通道。 */
 interface ElectronAPI {
-  saveData: (data: any) => Promise<{ success: boolean; error?: string }>;
-  loadData: () => Promise<any | null>;
+  saveData: (data: AppData) => Promise<SaveResult>;
+  restoreData: (data: AppData) => Promise<SaveResult>;
+  loadData: () => Promise<LoadResult>;
+  onPrepareClose: (callback: (requestId: string) => void) => void;
+  completeClose: (requestId: string, success: boolean) => void;
 }
 
 declare global {
-  interface Window {
-    electronAPI?: ElectronAPI;
-  }
+  interface Window { electronAPI?: ElectronAPI; }
 }
 
+/** 管理全局路线状态及前端保存队列；读取、校验和持久化失败均通过独立状态反馈。 */
 @Injectable({
   providedIn: 'root'
 })
@@ -94,7 +51,22 @@ export class RouteService {
   // Expose initialization state to components
   initialized = signal(false);
 
-  private isLoaded = false;
+  saveStatus = signal<'loading' | 'saved' | 'pending' | 'saving' | 'error'>('loading');
+  loadError = signal('');
+  saveError = signal('');
+  notice = signal('');
+  operationError = signal('');
+  restoring = signal(false);
+  private zone = inject(NgZone);
+  private loading: Promise<void>;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private pending: AppData | null = null;
+  private saving: Promise<boolean> | null = null;
+  private observed = '';
+  private persisted = '';
+  private closing = false;
+  private restoreTask: Promise<boolean> | null = null;
+  private imports = new Set<Promise<void>>();
 
   // A curated palette of high-contrast colors that stand out against 
   // Mapbox Outdoors (greens/creams) and Water (blues).
@@ -119,96 +91,159 @@ export class RouteService {
     '#854d0e', // Yellow-800 (Dark Brownish Gold)
   ];
 
+  /** 建立自动保存与退出握手；读取未完成或损坏时不调度任何默认快照写入。 */
   constructor() {
-    this.initializeData();
-    
-    // Auto-save effect
+    this.loading = this.initializeData();
     effect(() => {
-      const currentFolders = this.folders();
-      const currentRoutes = this.routes();
-      const currentSettings = this.appSettings();
+      const data = this.snapshot();
+      if (this.initialized() && !this.loadError() && !this.restoring()) this.scheduleSave(data);
+    }, { allowSignalWrites: true });
 
-      if (this.isLoaded) {
-        this.saveData(currentFolders, currentRoutes, currentSettings);
+    window.electronAPI?.onPrepareClose(requestId => {
+      this.zone.run(() => {
+        this.closing = true;
+        void this.flushForClose().then(success => {
+          window.electronAPI?.completeClose(requestId, success);
+          this.closing = false;
+        });
+      });
+    });
+    window.addEventListener('beforeunload', event => {
+      if (window.electronAPI) {
+        // 正常桌面关闭由主进程握手处理；刷新时只在确有未保存内容时阻止离开。
+        if (!this.closing && !this.loadError() && this.hasChanges()) event.returnValue = false;
+      } else if (this.initialized() && !this.loadError()) {
+        // 浏览器卸载不保证异步任务完成，直接同步写入单个完整快照。
+        if (this.restoreTask || this.imports.size) {
+          event.preventDefault(); event.returnValue = ''; return;
+        }
+        const result = this.saveBrowserSnapshot();
+        if (!result.success) { event.preventDefault(); event.returnValue = ''; }
       }
     });
   }
 
-  private async initializeData() {
-    if (window.electronAPI) {
-      try {
-        const data = await window.electronAPI.loadData();
-        if (data) {
-            console.log('Loaded data from Electron storage');
-            if (data.folders) this.folders.set(this.ensureFolderColors(data.folders));
-            if (data.routes) this.routes.set(data.routes);
-            if (data.settings) {
-                this.appSettings.set({
-                    ...this.appSettings(), 
-                    ...data.settings,
-                    isComparisonMode: false // Always reset view mode on load
-                });
-                
-                // Re-validate key on startup if exists
-                if (data.settings.mapboxApiKey) {
-                    await this.validateMapboxKey(data.settings.mapboxApiKey);
-                }
-            }
-        } else {
-            await this.loadFromLocalStorage(); 
-        }
-      } catch (err) {
-        console.error('Error loading from Electron:', err);
-        await this.loadFromLocalStorage(); 
+  /** @returns {AppData} 当前业务快照；不包含临时地图视角或保存状态。 */
+  private snapshot(): AppData {
+    return { version: CURRENT_VERSION, folders: this.folders(), routes: this.routes(), settings: this.appSettings() };
+  }
+
+  /** @returns {boolean} 直接比较 Signal 状态，覆盖用户修改后立即关闭、effect 尚未运行的情况。 */
+  private hasChanges(): boolean {
+    return JSON.stringify(this.snapshot()) !== this.persisted;
+  }
+
+  /** @param {AppData} data 已完整校验的数据。 @returns {void} 一次应用全量状态，启动时重置比较视图。 */
+  private applyData(data: AppData): void {
+    this.folders.set(data.folders);
+    this.routes.set(data.routes);
+    this.appSettings.set({ ...data.settings, isComparisonMode: false });
+  }
+
+  /** @returns {Promise<void>} 区分首次启动与读取失败；桌面仅首次无文件时迁移历史浏览器镜像。 */
+  initializeData(): Promise<void> {
+    this.loading = this.readInitialData();
+    return this.loading;
+  }
+
+  /** @returns {Promise<void>} 实际加载任务；与退出处理共享同一 Promise，重试时同样等待。 */
+  private async readInitialData(): Promise<void> {
+    this.initialized.set(false);
+    this.loadError.set('');
+    this.saveStatus.set('loading');
+    try {
+      let result = window.electronAPI ? await window.electronAPI.loadData() : loadBrowserData(localStorage);
+      if (window.electronAPI && result.status === 'missing') {
+        result = loadBrowserData(localStorage);
+        if (result.status === 'ok' || result.status === 'recovered') result.needsMigration = true;
       }
-    } else {
-      await this.loadFromLocalStorage();
-    }
-    
-    this.isLoaded = true;
-    this.initialized.set(true);
+      if (result.status === 'error') throw new Error(result.error);
+      if (result.status === 'ok' || result.status === 'recovered') {
+        this.applyData(normalizeData(result.data));
+        this.notice.set(result.message ?? '');
+      }
+      const migration = (result.status === 'ok' || result.status === 'recovered') && result.needsMigration;
+      this.persisted = migration ? '' : JSON.stringify(this.snapshot());
+      this.observed = this.persisted;
+      this.saveStatus.set('saved');
+      this.saveError.set('');
+      // Token 检查不得延迟数据加载和退出保存；网络失败只影响地图设置。
+      const key = this.appSettings().mapboxApiKey;
+      if (key) void this.validateMapboxKey(key);
+    } catch (error) {
+      this.loadError.set(error instanceof Error ? error.message : '读取数据失败');
+      this.saveStatus.set('error');
+    } finally { this.initialized.set(true); }
   }
 
-  private async loadFromLocalStorage() {
-    const savedFolders = localStorage.getItem('velo_folders');
-    const savedRoutes = localStorage.getItem('velo_routes');
-    const savedSettings = localStorage.getItem('velo_settings');
-
-    if (savedFolders) {
-        const parsed: Folder[] = JSON.parse(savedFolders);
-        this.folders.set(this.ensureFolderColors(parsed.map(f => ({...f, isExpanded: f.isExpanded ?? true}))));
-    }
-    if (savedRoutes) this.routes.set(JSON.parse(savedRoutes));
-    if (savedSettings) {
-        const settings = JSON.parse(savedSettings);
-        this.appSettings.set({ ...this.appSettings(), ...settings, isComparisonMode: false });
-        if(settings.mapboxApiKey) {
-            await this.validateMapboxKey(settings.mapboxApiKey);
-        }
-    }
+  /** @param {AppData} data 当前快照。 @returns {void} 合并 400ms 内的修改，保留最近一次快照。 */
+  private scheduleSave(data: AppData): void {
+    const fingerprint = JSON.stringify(data);
+    if (fingerprint === this.observed) return;
+    this.observed = fingerprint;
+    this.pending = data;
+    this.saveStatus.set('pending');
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => void this.flushSave(), 400);
   }
 
-  private saveData(folders: Folder[], routes: RouteData[], settings: AppSettings) {
-    const dataToSave = { folders, routes, settings };
-
-    if (window.electronAPI) {
-      window.electronAPI.saveData(dataToSave).catch(err => {
-        console.error('Failed to auto-save to file:', err);
-      });
-    }
-
-    localStorage.setItem('velo_folders', JSON.stringify(folders));
-    localStorage.setItem('velo_routes', JSON.stringify(routes));
-    localStorage.setItem('velo_settings', JSON.stringify(settings));
+  /** @returns {SaveResult} 同步保存浏览器快照；失败不会把状态标记为已保存。 */
+  private saveBrowserSnapshot(): SaveResult {
+    if (!this.hasChanges()) return { success: true };
+    try { return saveBrowserData(localStorage, this.snapshot()); }
+    catch { return { success: false, error: '浏览器存储不可访问，请保留当前页面并导出备份。' }; }
   }
 
-  private ensureFolderColors(folders: Folder[]): Folder[] {
-      return folders.map(f => {
-          if (!f.color) {
-              return { ...f, color: this.getRandomColor() };
-          }
-          return f;
-      });
+  /** @returns {Promise<boolean>} 串行清空最新快照，失败保留待保存数据供显式重试。 */
+  private async flushSave(): Promise<boolean> {
+    clearTimeout(this.timer);
+    if (this.saving) return this.saving;
+    this.saving = this.drainSaves();
+    try { return await this.saving; }
+    finally { this.saving = null; }
+  }
+
+  /** @returns {Promise<boolean>} 写入期间的新快照继续排队；旧请求完成不能覆盖较新的保存状态。 */
+  private async drainSaves(): Promise<boolean> {
+    while (this.pending) {
+      const data = this.pending;
+      this.pending = null;
+      this.saveStatus.set('saving');
+      try {
+        const result = window.electronAPI
+          ? await window.electronAPI.saveData(data)
+          : saveBrowserData(localStorage, data);
+        if (!result.success) throw new Error(result.error);
+        this.persisted = JSON.stringify(data);
+      } catch (error) {
+        if (!this.pending) this.pending = data;
+        this.saveError.set(error instanceof Error ? error.message : '保存失败');
+        this.saveStatus.set('error');
+        return false;
+      }
+    }
+    this.saveError.set('');
+    this.saveStatus.set('saved');
+    return true;
+  }
+
+  /** @returns {Promise<boolean>} 使用当前状态重试失败写入，不要求用户重新编辑。 */
+  async retrySave(): Promise<boolean> {
+    if (this.loadError() || !this.initialized()) return false;
+    this.pending = this.snapshot();
+    return this.flushSave();
+  }
+
+  /** @returns {Promise<boolean>} 正常退出前等待读取及全部写入；读取失败但无法编辑时可安全退出。 */
+  private async flushForClose(): Promise<boolean> {
+    try {
+      await this.loading;
+      if (this.restoreTask) await this.restoreTask;
+      await Promise.all([...this.imports]);
+      if (this.loadError()) return true;
+      if (this.hasChanges()) this.pending = this.snapshot();
+      return await this.flushSave();
+    } catch { return false; }
   }
 
   // --- Settings & Mapbox ---
@@ -291,9 +326,10 @@ export class RouteService {
 
   // --- GPX Processing & Helper ---
   
+  /** @returns {void} 导出含设置及时间戳的 v3 完整快照，不修改当前存储与保存队列。 */
   downloadBackup() {
     const data: AppDataBackup = {
-      version: 2,
+      version: CURRENT_VERSION,
       timestamp: Date.now(),
       folders: this.folders(),
       routes: this.routes(),
@@ -313,25 +349,69 @@ export class RouteService {
     URL.revokeObjectURL(url);
   }
 
-  async restoreBackup(file: File): Promise<boolean> {
+  /**
+   * 完整校验后先持久化、再替换界面状态；格式或写入失败均保持当前路线不变。
+   * @param {File} file 用户选择并确认恢复的 JSON 文件。
+   * @returns {Promise<boolean>} 仅在目标存储实际保存成功后返回 true。
+   */
+  restoreBackup(file: File): Promise<boolean> {
+    if (this.restoreTask) return this.restoreTask;
+    this.restoring.set(true);
+    this.restoreTask = this.performRestore(file).finally(() => {
+      this.restoreTask = null;
+      this.restoring.set(false);
+    });
+    return this.restoreTask;
+  }
+
+  /** @param {File} file 用户选定的备份。 @returns {Promise<boolean>} 在退出前必须等待的恢复事务。 */
+  private async performRestore(file: File): Promise<boolean> {
+    this.operationError.set('');
+    let data: AppData;
+    try { data = normalizeData(JSON.parse(await file.text())); }
+    catch (error) {
+      this.operationError.set(error instanceof Error ? error.message : '备份格式无效');
+      return false;
+    }
+    await Promise.all([...this.imports]);
+    clearTimeout(this.timer);
     try {
-      const text = await file.text();
-      const data: AppDataBackup = JSON.parse(text);
-      if (!data.folders || !data.routes) throw new Error('Invalid');
-      
-      this.folders.set(this.ensureFolderColors(data.folders));
-      this.routes.set(data.routes);
-      if (data.settings) {
-          this.appSettings.set(data.settings);
-      }
+      // 先完成已发出的旧写入，取消尚未发出的旧快照，避免恢复成功后又被旧请求覆盖。
+      if (this.saving) await this.saving;
+      this.pending = null;
+      const result = window.electronAPI
+        ? await window.electronAPI.restoreData(data)
+        : saveBrowserData(localStorage, data, true);
+      if (!result.success) throw new Error(result.error);
+      this.applyData(data);
+      this.loadError.set('');
+      this.notice.set('备份已恢复并保存。');
+      this.persisted = JSON.stringify(this.snapshot());
+      this.observed = this.persisted;
+      this.saveError.set('');
+      this.saveStatus.set('saved');
       return true;
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      this.operationError.set(error instanceof Error ? error.message : '恢复保存失败');
+      // 恢复失败时保留原界面状态及其待保存内容，用户可以继续导出或重试。
+      if (!this.loadError() && this.hasChanges()) {
+        this.pending = this.snapshot();
+        this.saveStatus.set('error');
+        this.saveError.set('恢复未完成，当前修改仍未保存。');
+      }
       return false;
     }
   }
 
-  async processGpxFiles(files: File[], folderId: string) {
+  /** @param {File[]} files 批量 GPX。 @param {string} folderId 目标文件夹。 @returns {Promise<void>} 退出前可等待的导入任务。 */
+  processGpxFiles(files: File[], folderId: string): Promise<void> {
+    const task = this.importGpxFiles(files, folderId).finally(() => this.imports.delete(task));
+    this.imports.add(task);
+    return task;
+  }
+
+  /** @param {File[]} files 选定的轨迹。 @param {string} folderId 有效目标目录。 @returns {Promise<void>} 非法轨迹不进入应用状态。 */
+  private async importGpxFiles(files: File[], folderId: string): Promise<void> {
     const newRoutes: RouteData[] = [];
     const currentRoutes = [...this.routes()];
 
@@ -356,15 +436,22 @@ export class RouteService {
         const stats = this.calculateStats(points);
         const color = this.getDistinctColor([...currentRoutes, ...newRoutes]);
 
-        newRoutes.push({
+        const candidate: RouteData = {
           id: crypto.randomUUID(),
           name: file.name.replace('.gpx', ''),
           description: 'Imported from GPX',
           folderId, points, stats, color, isVisible: true
-        });
-      } catch (err) { console.error(err); }
+        };
+        // 在改动共享状态前校验坐标及统计，避免一个非法文件使整份数据无法保存。
+        normalizeData({ ...this.snapshot(), routes: [...this.routes(), ...newRoutes, candidate] });
+        newRoutes.push(candidate);
+      } catch (err) {
+        this.operationError.set(err instanceof Error ? err.message : 'GPX 导入失败');
+      }
     }
-    if (newRoutes.length > 0) this.routes.update(r => [...r, ...newRoutes]);
+    if (newRoutes.length > 0 && this.folders().some(folder => folder.id === folderId)) {
+      this.routes.update(r => [...r, ...newRoutes]);
+    }
   }
 
   // Helper methods

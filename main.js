@@ -1,7 +1,9 @@
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { pathToFileURL } = require('url');
+const { randomUUID } = require('crypto');
 
 let win = null;
 
@@ -16,12 +18,50 @@ if (!app.isPackaged) {
 
 const useDevServer = !app.isPackaged && process.env.VELOROUTE_DEV_SERVER === '1';
 const DATA_FILE = path.join(app.getPath('userData'), 'storage.json');
+const storageReady = import('./storage/store.mjs').then(({ AtomicStore }) => new AtomicStore(DATA_FILE));
+let rendererReady = false;
+let allowClose = false;
+let quitting = false;
+let closeRequest = null;
+let closeTimer;
+
+/** @param {Electron.IpcMainEvent | Electron.IpcMainInvokeEvent} event IPC 来源。 @returns {boolean} 仅允许当前窗口的可信顶层页面。 */
+function trustedSender(event) {
+  const expected = useDevServer ? 'http://127.0.0.1:4200/'
+    : pathToFileURL(path.join(__dirname, 'dist/veloroute-manager/browser/index.html')).href;
+  return !!win && event.sender === win.webContents
+    && event.senderFrame === win.webContents.mainFrame
+    && event.senderFrame.url.split('#')[0] === expected;
+}
+
+/** @returns {Promise<void>} 保存失败或超时后返回应用，明确重试；不提供自动丢弃修改的分支。 */
+async function closeFailed() {
+  clearTimeout(closeTimer);
+  closeRequest = null;
+  if (!win || win.isDestroyed()) return;
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning', message: '尚未完成保存，应用保持打开。',
+    detail: '请检查界面的保存提示，解决问题后重试。',
+    buttons: ['返回应用', '重试保存并关闭'], defaultId: 0, cancelId: 0
+  });
+  if (response === 1 && win && !win.isDestroyed()) win.close();
+}
+
+/** @returns {void} 请求渲染进程提交防抖队列，使用请求 ID 忽略超时后的过期确认。 */
+function prepareClose() {
+  if (closeRequest) return;
+  closeRequest = randomUUID();
+  closeTimer = setTimeout(() => void closeFailed(), 15000);
+  win.webContents.send('prepare-close', closeRequest);
+}
 
 /**
- * 创建桌面窗口，并按运行模式加载开发服务器或本地构建产物。
+ * 创建桌面窗口，按运行模式加载界面，并挂接退出前保存握手。
  * @returns {void} 窗口引用保存在主进程，关闭时释放；不修改正式数据目录。
  */
 function createWindow() {
+  rendererReady = false;
+  allowClose = false;
   win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -48,39 +88,64 @@ function createWindow() {
     app.exit(1);
   });
 
+  win.on('close', event => {
+    if (allowClose) return;
+    event.preventDefault();
+    if (rendererReady) prepareClose();
+    else {
+      // 初始化前没有可编辑数据，仍需等待已接收的文件任务结束。
+      void storageReady.then(store => store.drain()).then(() => {
+        allowClose = true;
+        if (quitting) app.quit();
+        else if (win) win.close();
+      });
+    }
+  });
+
   win.on('closed', () => {
+    clearTimeout(closeTimer);
+    closeRequest = null;
     win = null;
   });
 }
 
-// --- IPC Handlers for File System Operations ---
+// 路径由主进程固定；数据在 AtomicStore 中再次进行结构与关联校验。
+for (const [channel, operation] of [
+  ['save-data', async (store, data) => store.save(data)],
+  ['restore-data', async (store, data) => store.save(data, true)],
+  ['load-data', async store => store.load()]
+]) {
+  ipcMain.handle(channel, async (event, data) => {
+    if (!trustedSender(event)) throw new Error('拒绝不可信页面的数据访问');
+    return operation(await storageReady, data);
+  });
+}
 
-ipcMain.handle('save-data', async (event, data) => {
-  try {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data));
-    return { success: true };
-  } catch (error) {
-    console.error('Failed to save data:', error);
-    return { success: false, error: error.message };
-  }
+ipcMain.on('storage-ready', event => {
+  if (trustedSender(event)) rendererReady = true;
 });
 
-ipcMain.handle('load-data', async () => {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const data = fs.readFileSync(DATA_FILE, 'utf-8');
-      return JSON.parse(data);
-    }
-    return null; // File doesn't exist yet (first run)
-  } catch (error) {
-    console.error('Failed to load data:', error);
-    return null;
-  }
+ipcMain.on('complete-close', async (event, requestId, success) => {
+  if (!trustedSender(event) || !closeRequest || requestId !== closeRequest || typeof success !== 'boolean') return;
+  clearTimeout(closeTimer);
+  if (!success) { await closeFailed(); return; }
+  await (await storageReady).drain();
+  // 等待过程中可能已被取消；过期结果不能关闭用户继续编辑的窗口。
+  if (closeRequest !== requestId) return;
+  allowClose = true;
+  if (quitting) app.quit();
+  else win.close();
 });
 
 // --- App Lifecycle ---
 
-app.on('ready', createWindow);
+// 单实例锁按 userData 隔离，避免两个本应用进程并发覆盖同一存储文件。
+if (!app.requestSingleInstanceLock()) app.quit();
+else app.on('ready', createWindow);
+app.on('second-instance', () => {
+  if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+});
+app.on('before-quit', () => { quitting = true; });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

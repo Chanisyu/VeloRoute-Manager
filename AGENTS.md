@@ -18,6 +18,8 @@
 | --- | --- |
 | `src/app.component.ts` | 通过 Signal 切换地图、管理、设置视图；未接入 Angular Router。 |
 | `src/services/route.service.ts` | 数据类型、共享状态、GPX 解析、统计、自动保存、备份及 Token 验证集中于此。 |
+| `shared/storage-schema.mjs`、`storage/store.mjs` | 跨进程数据校验/迁移与桌面原子存储；类型声明为相邻 `.d.mts`。 |
+| `src/component/storage-status.component.ts` | 保存反馈、失败重试及读取失败后的安全恢复入口。 |
 | `src/component/map-view.component.ts` | 底图、地形、路线图层、悬浮/点击交互、文件夹对比；每条路线有独立 GeoJSON source、显示层和命中层。 |
 | `src/component/management-view.component.ts`、`settings-view.component.ts` | 文件夹与路线编辑、GPX/备份导入、Mapbox 设置；组件使用内联模板。 |
 | `main.js`、`preload.js` | 窗口、文件持久化、`save-data/load-data` IPC；桥接为 `window.electronAPI.saveData/loadData`。 |
@@ -27,15 +29,16 @@
 
 - `RouteData` 保存 UUID、所属 `folderId`、名称/描述、`points`、`stats`、颜色及显隐状态；点格式为 `{lat, lon, ele}`，GeoJSON 坐标顺序为 `[lon, lat]`。删除文件夹会连同路线删除。
 - GPX 仅提取 `trkpt`，缺失高程按 0 处理，不保留原始 XML、时间或扩展字段；不同 `trk/trkseg` 被合并，不支持 `rtept/wpt`。距离使用 Haversine；平均坡度是有效点段有符号坡度的算术平均，坡度绝对值 ≥50% 的段不参与坡度统计。
-- 桌面存储为 `app.getPath('userData')/storage.json`，结构 `{folders, routes, settings}`；未打包运行使用 `%APPDATA%/veloroute-manager-development/`，测试通过 `VELOROUTE_USER_DATA_DIR` 指定临时目录，安装版忽略该变量。Web 使用 `velo_folders/velo_routes/velo_settings`；桌面保存也会写 localStorage。
-- 导出备份为 `version: 2`，含时间戳、文件夹、路线及设置（包括 Mapbox Token）；恢复会覆盖现有数据，目前无完整结构校验或版本迁移。修改数据结构须兼容已有存储和备份。
+- 桌面为 `storage.json`（v3，保留 folders/routes/settings）；`.bak` 为上一版有效数据。未打包运行仍使用独立开发目录。主进程排队异步写入、同步临时文件后替换；读取损坏时禁止默认数据覆盖。恢复原文保存在 `.preserved-*.json`，详情见 [STORAGE.md](STORAGE.md)。
+- 导出备份为 v3（含时间戳与 Mapbox Token），兼容无版本/v1/v2；统一校验后先落盘再替换界面。浏览器使用 `velo_data/velo_data_backup`，只在缺少新键时迁移旧三键；桌面不再维护浏览器数据镜像。
+- 保存防抖 400ms；正常关闭等待待保存快照、导入、恢复及在途写入，失败返回应用。不要绕过校验直接设置加载结果，也不要把读取失败当作首次启动。主进程以单实例锁保护同一数据目录。
 - `mapState` 仅在内存中保留视角；重启会重置对比模式。底图只有 Outdoors v12 和 OSM 栅格，地形在倾斜时启用；OSM 也受当前 Mapbox Token 初始化流程约束。切换样式后必须恢复路线图层。
 
 ## 工作流与待处理项
 
 - 使用 Node.js 22.22.3、npm 10.9.8 和 `npm ci`；所有直接依赖固定版本并提交锁文件。本阶段维持旧框架版本系列，升级单独实施。
 - 日常运行 `npm run dev`（`electron:dev` 为别名），前端自动刷新，主进程/preload 自动重启；Web 为 `npm start`；静态桌面预览为 `npm run electron:preview`。完整流程见 [DEVELOPMENT.md](DEVELOPMENT.md)。
-- `npm run check` 执行主进程语法检查、生产构建及 Playwright 浏览器/Electron 冒烟测试；首次安装 `npx playwright install chromium --no-shell`。测试使用 4201 端口及临时数据目录，不复用开发服务。
+- `npm run check` 执行语法检查、存储故障测试、生产构建及 Playwright 浏览器/Electron 测试；`npm run test:storage` 单独验证存储层。首次安装浏览器命令不变；测试使用 4201 端口及临时目录。
 - `npm run electron:build` 使用相对资源路径，输出 `release/`，禁用自动发布；当前使用 Electron 默认图标。GitHub Actions 在 Windows 上检查构建、测试及安装包生成。
 - 功能变更验证受影响的 GPX 导入、地图交互、重启持久化及备份恢复流程；交付前验证安装包。不要把普通界面调整变成每次重新安装。
-- 可靠性重点：主进程整份同步覆盖 JSON，无原子写入/备份；前端未处理保存返回的 `{success:false}`。安全重点：路线名称直接拼入 Popup 的 `setHTML`，导入数据与 IPC 参数缺少严格校验。
+- 后续安全重点：路线名称仍直接拼入 Popup 的 `setHTML`；旧框架依赖升级另行处理。存储变更必须验证旧格式、损坏文件、失败写入、重试及退出保存，不访问用户正式数据。

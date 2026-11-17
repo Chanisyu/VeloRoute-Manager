@@ -13,12 +13,13 @@
     "electron:build": "npm run build && electron-builder --win nsis --x64 --publish never",
     "dev": "concurrently --kill-others --success first -n angular,electron \"npm:start\" \"npm:electron:watch\"",
     "electron:dev": "npm run dev",
-    "electron:watch": "wait-on --timeout 120000 http-get://127.0.0.1:4200 && cross-env VELOROUTE_DEV_SERVER=1 nodemon --watch main.js --watch preload.js --ext js --exec \"electron .\"",
-    "test": "npm run build && playwright test",
-    "check": "node --check main.js && node --check preload.js && npm test",
+    "electron:watch": "wait-on --timeout 120000 http-get://127.0.0.1:4200 && cross-env VELOROUTE_DEV_SERVER=1 nodemon --watch main.js --watch preload.js --watch storage --watch shared --ext js,mjs --exec \"electron .\"",
+    "test": "npm run test:storage && npm run build && playwright test",
+    "check": "node --check main.js && node --check preload.js && node --check storage/store.mjs && npm test",
     "prestart": "node scripts/check-runtime.cjs",
     "prebuild": "node scripts/check-runtime.cjs",
-    "predev": "node scripts/check-runtime.cjs"
+    "predev": "node scripts/check-runtime.cjs",
+    "test:storage": "node --test tests/storage.test.mjs"
   },
   "private": true,
   "dependencies": {
@@ -57,7 +58,9 @@
       "dist/**/*",
       "main.js",
       "preload.js",
-      "package.json"
+      "package.json",
+      "storage/**/*.mjs",
+      "shared/**/*.mjs"
     ],
     "win": {
       "target": [
