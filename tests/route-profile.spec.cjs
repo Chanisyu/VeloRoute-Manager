@@ -24,7 +24,8 @@ async function position(page, fraction) {
   return { x: box.x + (56 + fraction * (width - 72)) / width * box.width, y: box.y + 120 };
 }
 
-test('剖面悬停读数、滚轮锚点缩放、左键拖动和重置正确且不改写路线', async ({ page }) => {
+test('剖面悬停、缩放、拖动及平滑恢复全程均不改写路线', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
   await open(page);
   const x = Array.from({ length: 101 }, (_, i) => i * 10);
   await page.locator('input[accept=".gpx"]').first().setInputFiles(file('剖面验证', [{ x, h: x.map(d => d / 10) }]));
@@ -44,9 +45,24 @@ test('剖面悬停读数、滚轮锚点缩放、左键拖动和重置正确且�
   await page.mouse.move(at.x, at.y); await page.mouse.down();
   await page.mouse.move(at.x - 70, at.y, { steps: 5 }); await page.mouse.up();
   await expect.poll(() => svg.evaluate(el => Number(el.getAttribute('data-start')))).toBeGreaterThan(before);
+  const localStart = Number(await svg.getAttribute('data-start'));
+  const localEnd = Number(await svg.getAttribute('data-end'));
+  // 在点击前记录横轴变化，检查动画实际经过中间视窗，避免只验证终点。
+  await svg.evaluate(el => {
+    el.resetFrames = [];
+    const observer = new MutationObserver(() => {
+      const start = Number(el.getAttribute('data-start'));
+      el.resetFrames.push([start, Number(el.getAttribute('data-end'))]);
+      if (start === 0) observer.disconnect();
+    });
+    observer.observe(el, { attributeFilter: ['data-start', 'data-end'] });
+  });
   await page.getByRole('button', { name: '显示全程', exact: true }).click();
   await expect(svg).toHaveAttribute('data-start', '0');
-  expect(Number(await svg.getAttribute('data-end'))).toBeCloseTo(1000, 5);
+  const fullEnd = Number(await svg.getAttribute('data-end'));
+  expect(fullEnd).toBeCloseTo(1000, 5);
+  const frames = await svg.evaluate(el => el.resetFrames);
+  expect(frames.some(([start, end]) => start > 0 && start < localStart && end > localEnd && end < fullEnd)).toBe(true);
   expect(await page.evaluate(() => localStorage.getItem('velo_data'))).toBe(saved);
 });
 

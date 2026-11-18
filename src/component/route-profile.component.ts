@@ -3,6 +3,7 @@ import type { RoutePoint } from '../../shared/storage-schema.mjs';
 import { buildRouteProfile, clampProfileWindow, sampleRouteProfile, visibleProfilePoints, zoomProfileWindow } from '../../shared/route-profile.mjs';
 
 let nextProfileId = 0;
+const RESET_DURATION_MS = 420;
 
 /**
  * 提供独立的交互剖面图；横向缩放、平移和悬停只影响本组件，不改动路线或保存状态。
@@ -73,6 +74,7 @@ export class RouteProfileComponent implements AfterViewInit, OnDestroy {
   readonly plotWidth = computed(() => Math.max(1, this.width() - 72));
   readonly tooltipLeft = computed(() => Math.max(56, Math.min(this.width() - 188, (this.hover()?.x ?? 56) + 12)));
   private observer?: ResizeObserver;
+  private resetFrame?: number;
   private drag: { id: number; clientX: number; start: number; span: number; pixelWidth: number } | null = null;
 
   readonly yRange = computed(() => {
@@ -98,6 +100,7 @@ export class RouteProfileComponent implements AfterViewInit, OnDestroy {
   constructor() {
     effect(() => {
       this.routeId(); const profile = this.profile();
+      this.cancelResetAnimation();
       this.window.set([0, profile.distance]); this.hover.set(null); this.cancelDrag();
     }, { allowSignalWrites: true });
   }
@@ -108,8 +111,11 @@ export class RouteProfileComponent implements AfterViewInit, OnDestroy {
     this.observer.observe(this.frame.nativeElement);
   }
 
-  /** @returns 无返回值；销毁后停止尺寸监听，不保留跨路线事件或定时任务。 */
-  ngOnDestroy(): void { this.observer?.disconnect(); }
+  /** @returns 无返回值；销毁时停止尺寸监听并取消待执行的动画帧。 */
+  ngOnDestroy(): void {
+    this.observer?.disconnect();
+    this.cancelResetAnimation();
+  }
 
   /** @param start 起点。 @param end 终点。 @param count 目标刻度数量。 @returns 可读的十进制刻度，排除零宽范围。 */
   private ticks(start: number, end: number, count: number): number[] {
@@ -134,19 +140,21 @@ export class RouteProfileComponent implements AfterViewInit, OnDestroy {
     return (event.clientX - bounds.left) * this.width() / bounds.width;
   }
 
-  /** @param event 滚轮事件。 @returns 锚定光标进行横向缩放；仅图面拦截页面滚动，不修改全局缩放。 */
+  /** @param event 滚轮事件。 @returns 无返回值；中断回程动画并从当前视窗按光标位置缩放。 */
   wheel(event: WheelEvent): void {
     event.preventDefault();
     if (this.drag || !event.deltaY) return;
+    this.cancelResetAnimation();
     const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 280 : 1);
     this.window.set(zoomProfileWindow(this.window(), (this.eventX(event) - 56) / this.plotWidth(), Math.exp(Math.max(-500, Math.min(500, delta)) * 0.002), this.profile().distance));
     this.hover.set(null);
   }
 
-  /** @param event 指针按下。 @returns 仅左键开始平移；捕获指针使拖动离开图面后仍能正常结束。 */
+  /** @param event 指针按下。 @returns 无返回值；左键从当前视窗接管平移，捕获指针以完成图面外的拖动。 */
   pointerDown(event: PointerEvent): void {
     if (event.button !== 0 || !event.isPrimary) return;
     event.preventDefault();
+    this.cancelResetAnimation();
     const target = event.currentTarget as SVGSVGElement;
     target.setPointerCapture(event.pointerId);
     const bounds = target.getBoundingClientRect();
@@ -154,8 +162,9 @@ export class RouteProfileComponent implements AfterViewInit, OnDestroy {
     this.dragging.set(true); this.hover.set(null);
   }
 
-  /** @param event 指针移动。 @returns 拖动时平移；正常悬停时查询完整数据，缺失位置直接隐藏提示。 */
+  /** @param event 指针移动。 @returns 无返回值；拖动时平移，视窗静止时按完整数据更新悬停。 */
   pointerMove(event: PointerEvent): void {
+    if (this.resetFrame !== undefined) return;
     if (this.drag) {
       if (event.pointerId !== this.drag.id) return;
       this.window.set(clampProfileWindow(this.drag.start - (event.clientX - this.drag.clientX) / Math.max(1, this.drag.pixelWidth) * this.drag.span, this.drag.span, this.profile().distance));
@@ -178,6 +187,48 @@ export class RouteProfileComponent implements AfterViewInit, OnDestroy {
   cancelDrag(): void { this.drag = null; this.dragging.set(false); }
   /** @returns 离开图面时隐藏悬停；正在捕获的拖动继续有效。 */
   leave(): void { if (!this.drag) this.hover.set(null); }
-  /** @returns 恢复全程横坐标并清除交互状态，不触发数据保存。 */
-  resetView(): void { this.window.set([0, this.profile().distance]); this.hover.set(null); this.cancelDrag(); }
+
+  /** @returns 无返回值；停止回程动画并保留当前帧的里程范围，供用户接续操作。 */
+  private cancelResetAnimation(): void {
+    if (this.resetFrame === undefined) return;
+    cancelAnimationFrame(this.resetFrame);
+    this.resetFrame = undefined;
+  }
+
+  /** @returns 无返回值；从当前横轴范围平滑拉远到全程，启用减少动态效果时立即恢复。 */
+  resetView(): void {
+    if (this.resetFrame !== undefined) return;
+    this.hover.set(null);
+    this.cancelDrag();
+
+    const initialWindow = this.window();
+    const initialSpan = initialWindow[1] - initialWindow[0];
+    const distance = this.profile().distance;
+    if (initialSpan <= 0 || initialSpan >= distance || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.window.set([0, distance]);
+      return;
+    }
+
+    // 将新显示的里程按当前视窗左右两侧的剩余距离分配，最终恰好覆盖全程。
+    const anchor = initialWindow[0] / (distance - initialSpan);
+    const scale = distance / initialSpan;
+    let startedAt: number | undefined;
+
+    /** @param timestamp 当前帧的时间戳。 @returns 无返回值；更新横轴并在结束时设为精确的全程边界。 */
+    const animate = (timestamp: number): void => {
+      startedAt ??= timestamp;
+      const elapsed = (timestamp - startedAt) / RESET_DURATION_MS;
+      if (elapsed >= 1) {
+        this.window.set([0, distance]);
+        this.resetFrame = undefined;
+        return;
+      }
+
+      // 对缩放倍数做缓入缓出，深度放大时也能从局部平顺起步。
+      const progress = elapsed * elapsed * (3 - 2 * elapsed);
+      this.window.set(zoomProfileWindow(initialWindow, anchor, scale ** progress, distance));
+      this.resetFrame = requestAnimationFrame(animate);
+    };
+    this.resetFrame = requestAnimationFrame(animate);
+  }
 }
