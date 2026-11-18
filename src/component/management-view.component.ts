@@ -166,11 +166,7 @@ import { RouteProfileComponent } from './route-profile.component';
                     <div class="text-xl font-semibold" data-testid="stat-average">{{ route.stats.avgSlope === null ? '数据不足' : route.stats.avgSlope + '%' }}</div>
                   </div>
                    <div>
-                    <div class="text-slate-400 text-xs mb-1">
-                      @if (route.sourceFormat === 'FIT' && !route.stats.source) { 平均坡度（旧） }
-                      @else if (route.stats.source || route.stats.algorithmVersion) { 平均坡度 }
-                      @else { 最大坡度（旧） }
-                    </div>
+                    <div class="text-slate-400 text-xs mb-1">最大坡度{{ !route.stats.source && (route.sourceFormat === 'FIT' || !route.stats.algorithmVersion) ? '（旧）' : '' }}</div>
                     <div class="text-xl font-semibold text-red-400" data-testid="stat-maximum">{{ route.stats.maxSlope === null ? '数据不足' : route.stats.maxSlope + '%' }}</div>
                   </div>
                </div>

@@ -10,7 +10,7 @@ GPX 采用轨迹统计算法 v1，FIT 的四项高程指标采用文件内的设
 | --- | --- |
 | 累计爬升 / 累计下降 | 各轨迹分段内，分别累加平滑高程的正高差与负高差绝对值，再合计。内部保留浮点精度，最终显示整数米。 |
 | 平均上坡坡度 | `100 × 未取整累计爬升 / 平滑后上升区间的水平里程`。按距离加权，无上坡时为0，显示最多一位小数。不是全程净坡度，也不是逐点坡度算术平均。 |
-| 平均坡度 | 指最大100米平均上坡坡度。对有效连续高程剖面求 `100 × [h(s+100)-h(s)] / 100` 的最大正值。窗口严格100米，不跨分段或大于100米的原始采样缺口；有有效窗口但无上坡时为0，没有有效窗口时为null。 |
+| 最大坡度 | 指最大100米平均上坡坡度。对有效连续高程剖面求 `100 × [h(s+100)-h(s)] / 100` 的最大正值。窗口严格100米，不跨分段或大于100米的原始采样缺口；有有效窗口但无上坡时为0，没有有效窗口时为null。 |
 
 水平距离使用半径6371008.8米的Haversine公式，只累计同一分段内部的点间距离，最终保留两位公里小数。统计使用未取整距离。
 
@@ -30,7 +30,7 @@ GPX 采用轨迹统计算法 v1，FIT 的四项高程指标采用文件内的设
 
 - 校验单个 FIT 活动或路线文件的头、结构和 CRC 后，按记录顺序读取定位及高程。经纬度由半圆单位乘 `180 / 2³¹` 换算为度，高程优先取 `enhanced_altitude`，缺省回退到 `altitude`，换算为 `原值 ÷ 5 − 500` 米。缺失高程保留为 `null`。字段定义参见 [FIT 协议](https://developer.garmin.com/fit/protocol/)和 [FIT 路线文件说明](https://developer.garmin.com/fit/file-types/course/)。
 - 缺定位的记录跳过，计时启动、停止、缺定位和后续会话开始处切分轨迹。至少须有一段包含两个定位点，无可绘制轨迹或损坏的文件拒绝导入。
-- `Session.total_ascent`、`total_descent` 分别提供累计爬升和下降（米）。`avg_pos_grade` 提供平均上坡坡度，`max_pos_grade` 提供“平均坡度”栏使用的最大上坡坡度，原始值除以100得到百分比。窗口和滤波由设备决定。[Garmin 会话汇总规范](https://developer.garmin.com/fit/articles/file-types/activity.html) · [官方 FIT 字段定义](https://github.com/garmin/fit-javascript-sdk/blob/main/src/profile.js)
+- `Session.total_ascent`、`total_descent` 分别提供累计爬升和下降（米）。`avg_pos_grade` 提供平均上坡坡度，`max_pos_grade` 提供“最大坡度”栏使用的最大上坡坡度，原始值除以100得到百分比。窗口和滤波由设备决定。[Garmin 会话汇总规范](https://developer.garmin.com/fit/articles/file-types/activity.html) · [官方 FIT 字段定义](https://github.com/garmin/fit-javascript-sdk/blob/main/src/profile.js)
 - 缺少某个汇总字段时，该项显示“数据不足”。逐点海拔缺失不影响已提供的汇总；逐点坡度不参与这四项统计。多会话的累计升降分别相加，最大上坡坡度取最大，要求所有会话都有该项。平均上坡坡度只读取单会话汇总。
 - 当前 7 个码表样例都提供累计爬升，均缺少累计下降、平均上坡坡度与最大上坡坡度汇总。逐点海拔仍供高程剖面使用。
 

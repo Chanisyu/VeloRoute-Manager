@@ -27,7 +27,7 @@ test('统计说明按需展开，路线详情移除更新操作且导入备份�
   await expect(page.getByTestId('stat-gain')).toHaveText('20 m');
   await expect(page.getByTestId('stat-average')).toHaveText('10%');
   await expect(page.getByTestId('stat-maximum')).toHaveText('10%');
-  await expect(page.getByText('平均坡度', { exact: true })).toBeVisible();
+  await expect(page.getByText('最大坡度', { exact: true })).toBeVisible();
   await page.getByLabel('路线简介').fill('保留的用户简介');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('velo_data') ?? 'null')?.routes[0]?.description)).toBe('保留的用户简介');
   const original = await page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0]);
