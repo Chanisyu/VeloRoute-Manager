@@ -26,6 +26,12 @@
 
 这些参数定义产品的统计尺度，并非通用测量标准。极值对原始高程误差仍敏感，短于100米的陡坡不属于“最大100米平均坡度”的含义。
 
+## FIT 轨迹输入
+
+- 校验单个 FIT 活动或路线文件的头、结构和 CRC 后，按记录顺序读取定位及高程。经纬度由半圆单位乘 `180 / 2³¹` 换算为度，高程优先取 `enhanced_altitude`，缺省回退到 `altitude`，换算为 `原值 ÷ 5 − 500` 米。缺失高程保留为 `null`。字段定义参见 [FIT 协议](https://developer.garmin.com/fit/protocol/)和 [FIT 路线文件说明](https://developer.garmin.com/fit/file-types/course/)。
+- 缺定位的记录跳过，计时启动、停止、缺定位和后续会话开始处切分轨迹。至少须有一段包含两个定位点，无可绘制轨迹或损坏的文件拒绝导入。
+- 归一化后的轨迹与 GPX 共用统计和高程剖面。距离、累计升降和坡度按相同规则计算，因此可能与码表汇总值不同。存在高程缺失时仍可显示里程和可用剖面，高程统计沿用数据不足规则。
+
 ## 交互剖面图
 
 - 参考 [GPXStudio剖面实现](https://github.com/gpxstudio/gpx.studio/blob/2e0edc716bf6797a315c57f973d77024125dfa30/website/src/lib/components/elevation-profile/elevation-profile.ts)：横轴为累计水平里程，纵轴为文件原始高程。绘制数据不使用累计爬升的平滑结果，不改写顶部统计。

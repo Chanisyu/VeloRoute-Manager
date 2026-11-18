@@ -17,7 +17,7 @@ function fixture(name = '原有路线') {
 /** @param {import('@playwright/test').Page} page 当前窗口。 @returns {Promise<void>} 进入可编辑的管理页。 */
 async function openLibrary(page) {
   await page.getByRole('button', { name: '暂时跳过' }).click();
-  await page.getByRole('button', { name: '路线管理与 GPX 导入' }).click();
+  await page.getByRole('button', { name: '路线管理与 GPX / FIT 导入' }).click();
   await expect(page.getByRole('heading', { name: '路线管理' })).toBeVisible();
 }
 
@@ -115,7 +115,7 @@ test('保存反馈自动渐隐，连续保存重新计时，隐藏后再次修�
   await expect(status).toBeVisible();
   await expect(status).toBeHidden({ timeout: 5_000 });
 
-  await page.getByRole('button', { name: '路线管理与 GPX 导入' }).click();
+  await page.getByRole('button', { name: '路线管理与 GPX / FIT 导入' }).click();
   const input = page.getByPlaceholder('请输入文件夹名称');
   const add = page.getByRole('button', { name: '新建', exact: true });
   await input.fill('首次保存');
@@ -145,7 +145,7 @@ test('桌面旧数据迁移及非法备份拒绝，当前路线与文件不变',
   await withDesktop(async ({ page, dir }) => {
     await openLibrary(page);
     const file = path.join(dir, 'storage.json');
-    await expect.poll(async () => JSON.parse(await fs.readFile(file, 'utf8')).version).toBe(4);
+    await expect.poll(async () => JSON.parse(await fs.readFile(file, 'utf8')).version).toBe(5);
     expect(JSON.parse(await fs.readFile(file + '.bak', 'utf8')).version).toBe(2);
     const before = await fs.readFile(file, 'utf8');
     page.on('dialog', dialog => dialog.accept());
@@ -175,7 +175,7 @@ test('主文件损坏时读取备份，首次编辑保存保护损坏原文', as
 test('读取失败阻止编辑，用户导入有效备份后解除保护', async () => {
   await withDesktop(async ({ page, dir }) => {
     await expect(page.getByRole('heading', { name: '数据读取失败' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '路线管理与 GPX 导入' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '路线管理与 GPX / FIT 导入' })).toHaveCount(0);
     expect(await fs.readFile(path.join(dir, 'storage.json'), 'utf8')).toBe('{broken');
     await page.getByTestId('recovery-file').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(fixture('手动恢复路线'))) });
     await openLibrary(page);
@@ -238,7 +238,7 @@ test('读取 GPX 期间关闭窗口，先完成导入再保存退出', async () 
         return original.call(this);
       };
     });
-    await page.locator('input[accept=".gpx"]').first().setInputFiles(path.join(root, 'GPX_Eample', '待骑行路线', '金碧路.gpx'));
+    await page.locator('input[accept=".gpx,.fit"]').first().setInputFiles(path.join(root, 'GPX_example', '待骑行路线', '金碧路.gpx'));
     await expect.poll(() => page.evaluate(() => typeof window.__releaseFile)).toBe('function');
     const closed = desktop.waitForEvent('close');
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close());

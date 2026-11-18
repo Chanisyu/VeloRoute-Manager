@@ -1,6 +1,6 @@
 # **VeloRoute Manager**
 
-**VeloRoute Manager** 是基于AI Studio构建的一个现代化的桌面应用程序，专为自行车爱好者和路线规划者设计。它提供了一个直观的界面来组织、分析和可视化 GPX 骑行路线。
+**VeloRoute Manager** 是基于 AI Studio 构建的桌面应用，用于组织、分析和查看 GPX、FIT 骑行路线。
 
 ## 总而言之就是你可以使用该软件方便、直观地查看、呈现、管理你的骑行路线。
 
@@ -21,9 +21,9 @@
 * **动态视角**：支持地图倾斜（Pitch）和旋转，按住右键即可查看地形起伏。
 * **对比模式 (Comparison Mode)**：一键切换视图模式，按文件夹颜色对路线进行着色，便于比较不同类型的路线集合。
 
-### GPX 分析与管理
+### 路线分析与管理
 
-- **智能导入**：支持批量导入 .gpx 文件。
+- **批量导入**：在文件夹中混选 `.gpx` 和 `.fit`。FIT 支持包含定位点的活动或路线文件，提取轨迹与高程。路线列表在距离和累计爬升后显示 `GPX` 或 `FIT`。
 - **自动数据分析**：导入时自动计算关键指标：
   * 总距离 (km)
   * 累计爬升 / 下降 (m)
@@ -99,7 +99,7 @@ src/
 │   ├── management-view.component.ts # 侧边栏管理界面（文件夹、路线列表、详情页）
 │   └── settings-view.component.ts   # 设置页面（API Key 管理）
 ├── services/
-│   └── route.service.ts      # 核心服务：状态管理 (Signals)、GPX 解析、数据持久化
+│   └── route.service.ts      # 核心服务：状态管理 (Signals)、GPX/FIT 导入、数据持久化
 ├── main.ts                   # Angular 启动入口 (Zone.js 配置)
 └── ...
 main.js                       # Electron 主进程

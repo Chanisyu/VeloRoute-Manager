@@ -21,7 +21,8 @@
     "predev": "node scripts/check-runtime.cjs",
     "test:storage": "node --test tests/storage.test.mjs",
     "test:statistics": "node --test tests/statistics.test.mjs tests/route-profile.test.mjs",
-    "pretest": "npm run test:statistics"
+    "test:fit": "node --test tests/fit-route.test.mjs",
+    "pretest": "npm run test:statistics && npm run test:fit"
   },
   "private": true,
   "dependencies": {
@@ -30,6 +31,7 @@
     "@angular/core": "18.2.14",
     "@angular/forms": "18.2.14",
     "@angular/platform-browser": "18.2.14",
+    "fit-file-parser": "6.2.10",
     "mapbox-gl": "3.9.4",
     "rxjs": "7.8.2",
     "tslib": "2.8.1",

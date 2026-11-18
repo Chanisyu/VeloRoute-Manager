@@ -129,7 +129,7 @@ function windowExtrema(x, h) {
 }
 
 /**
- * 校验统计输入；历史路线缺少分段时必须重新读取原始 GPX，不能猜测分段。
+ * 校验统计输入；历史路线缺少分段时须重新读取原始轨迹文件，不能猜测分段。
  * @param {object[]} points 原始点。 @param {number[]} segmentStarts 各段首点索引。
  * @returns {void} 坐标、高程或分段不合法时抛出中文异常，不产生部分结果。
  */
@@ -137,7 +137,7 @@ function validateInput(points, segmentStarts) {
   if (!Array.isArray(points) || !points.length || !Array.isArray(segmentStarts)
       || !segmentStarts.length || segmentStarts[0] !== 0
       || Array.from(segmentStarts).some((value, i) => !Number.isInteger(value) || value < 0 || value >= points.length || (i > 0 && value <= segmentStarts[i - 1]))) {
-    throw new Error('轨迹分段信息无效，请重新导入原始 GPX。');
+    throw new Error('轨迹分段信息无效，请重新导入原始轨迹文件。');
   }
   for (const point of points) {
     if (!point || !Number.isFinite(point.lat) || Math.abs(point.lat) > 90

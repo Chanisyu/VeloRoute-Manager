@@ -6,9 +6,11 @@ export interface RouteStats {
   warnings?: ('missing-elevation' | 'sparse-sampling' | 'duplicate-position')[];
 }
 export interface RoutePoint { lat: number; lon: number; ele: number | null; }
+/** 轨迹文件的导入来源，独立于可编辑的名称和简介。 */
+export type RouteSourceFormat = 'GPX' | 'FIT';
 export interface RouteData {
   id: string; name: string; description: string; folderId: string;
-  points: RoutePoint[]; stats: RouteStats; color: string; isVisible: boolean;
+  points: RoutePoint[]; stats: RouteStats; sourceFormat: RouteSourceFormat; color: string; isVisible: boolean;
   /** 原始轨迹分段首点索引；历史缺省表示分段未知，不能猜测补齐。 */
   segmentStarts?: number[];
 }
@@ -23,7 +25,7 @@ export type LoadResult =
   | { status: 'missing' }
   | { status: 'error'; error: string };
 export type SaveResult = { success: true } | { success: false; error: string };
-export const CURRENT_VERSION: 4;
+export const CURRENT_VERSION: 5;
 export class DataValidationError extends Error { code: string; constructor(message: string, code?: string); }
 /** 完整校验并迁移旧格式；未知版本及非法业务字段抛出 DataValidationError。 */
 export function normalizeData(input: unknown): AppData;

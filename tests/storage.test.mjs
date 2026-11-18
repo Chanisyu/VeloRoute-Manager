@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { AtomicStore } from '../storage/store.mjs';
-import { normalizeData } from '../shared/storage-schema.mjs';
+import { CURRENT_VERSION, normalizeData } from '../shared/storage-schema.mjs';
 import { calculateRouteStats } from '../shared/route-statistics.mjs';
 import { loadBrowserData, saveBrowserData, DATA_KEY, BACKUP_KEY } from '../shared/browser-storage.mjs';
 
@@ -46,17 +46,17 @@ class MemoryStorage {
   }
 }
 
-test('v4缺失高程、分段和统计版本经桌面原子保存及重读完整保留', async t => {
+test('FIT 来源、缺失高程、分段和统计版本经桌面原子保存及重读完整保留', async t => {
   const dir = await temporaryDirectory(t);
   const store = new AtomicStore(path.join(dir, 'storage.json'));
-  const data = fixture(); data.version = 4;
-  const route = data.routes[0]; route.points[0].ele = null; route.segmentStarts = [0];
+  const data = fixture(); data.version = CURRENT_VERSION;
+  const route = data.routes[0]; route.sourceFormat = 'FIT'; route.points[0].ele = null; route.segmentStarts = [0];
   route.stats = calculateRouteStats(route.points, route.segmentStarts);
   await store.load();
   assert.equal((await store.save(data)).success, true);
   const loaded = await store.load();
   assert.deepEqual(loaded.data.routes[0], route);
-  assert.equal(loaded.data.version, 4);
+  assert.equal(loaded.data.version, CURRENT_VERSION);
   const invalid = structuredClone(data); invalid.routes[0].stats.warnings = [];
   assert.equal((await store.save(invalid)).success, false);
   assert.deepEqual((await store.load()).data.routes[0], route);
@@ -67,12 +67,25 @@ test('迁移无版本/v2 数据并保留中文、标识符和业务值', () => {
   delete old.version;
   delete old.routes[0].stats.minSlope;
   const data = normalizeData(old);
-  assert.equal(data.version, 4);
+  assert.equal(data.version, CURRENT_VERSION);
+  assert.equal(data.routes[0].sourceFormat, 'GPX');
   assert.equal(data.routes[0].name, '原有路线');
   assert.equal(data.routes[0].folderId, '1');
   assert.equal(data.routes[0].stats.minSlope, 0);
   assert.match(data.folders[0].color, /^#[a-f0-9]{6}$/);
   assert.equal(data.settings.mapboxApiKey, '');
+});
+
+test('v4 路线补齐 GPX 来源，v5 缺失或无效来源拒绝恢复', () => {
+  const old = { ...fixture(), version: 4 };
+  const migrated = normalizeData(old);
+  assert.equal(migrated.routes[0].sourceFormat, 'GPX');
+  assert.deepEqual(migrated.routes[0].stats, old.routes[0].stats);
+
+  const current = { ...old, version: CURRENT_VERSION };
+  assert.throws(() => normalizeData(current), /路线来源格式/);
+  current.routes[0].sourceFormat = 'TCX';
+  assert.throws(() => normalizeData(current), /路线来源格式/);
 });
 
 test('拒绝无效坐标、非有限统计、重复 ID、孤立路线和错误字段类型', () => {
@@ -166,7 +179,7 @@ test('双份数据损坏时禁止自动保存，显式恢复保留原文件', as
   assert.equal((await store.save(fixture())).success, false);
   assert.equal(await fs.readFile(store.file, 'utf8'), 'damaged');
   assert.equal((await store.save(fixture(), true)).success, true);
-  assert.equal(JSON.parse(await fs.readFile(store.file, 'utf8')).version, 4);
+  assert.equal(JSON.parse(await fs.readFile(store.file, 'utf8')).version, CURRENT_VERSION);
   assert.equal(await fs.readFile(store.backup, 'utf8'), 'damaged-backup');
 });
 
@@ -213,7 +226,7 @@ test('浏览器迁移旧三键，保留原键并写入单个完整快照', () =>
   const loaded = loadBrowserData(storage);
   assert.equal(loaded.needsMigration, true);
   assert.equal(saveBrowserData(storage, loaded.data).success, true);
-  assert.equal(JSON.parse(storage.getItem(DATA_KEY)).version, 4);
+  assert.equal(JSON.parse(storage.getItem(DATA_KEY)).version, CURRENT_VERSION);
   assert.equal(storage.getItem('velo_routes'), JSON.stringify(data.routes));
 });
 

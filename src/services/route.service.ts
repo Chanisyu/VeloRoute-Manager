@@ -1,10 +1,11 @@
 import { describeError } from '../../shared/user-messages.mjs';
 import { calculateRouteStats } from '../../shared/route-statistics.mjs';
+import { parseFitRoute } from '../../shared/fit-route.mjs';
 import { Injectable, signal, effect, NgZone, inject } from '@angular/core';
 import {
   normalizeData, CURRENT_VERSION,
   type RouteStats, type RoutePoint, type RouteData, type Folder, type AppSettings,
-  type AppData, type AppDataBackup, type LoadResult, type SaveResult
+  type AppData, type AppDataBackup, type LoadResult, type RouteSourceFormat, type SaveResult
 } from '../../shared/storage-schema.mjs';
 import { loadBrowserData, saveBrowserData } from '../../shared/browser-storage.mjs';
 export type { RouteData, Folder, RouteStats } from '../../shared/storage-schema.mjs';
@@ -326,7 +327,7 @@ export class RouteService {
     );
   }
 
-  // --- GPX Processing & Helper ---
+  // --- 轨迹导入与备份 ---
   
   /** @returns {void} 导出含原始分段、统计版本、设置及时间戳的完整快照，不修改当前状态。 */
   downloadBackup() {
@@ -405,36 +406,46 @@ export class RouteService {
     }
   }
 
-  /** @param {File[]} files 批量 GPX。 @param {string} folderId 目标文件夹。 @returns {Promise<void>} 退出前可等待的导入任务。 */
-  processGpxFiles(files: File[], folderId: string): Promise<void> {
-    const task = this.importGpxFiles(files, folderId).finally(() => this.imports.delete(task));
+  /** @param {File[]} files 可混选 GPX 和 FIT。 @param {string} folderId 目标文件夹。 @returns {Promise<void>} 计入退出与备份恢复等待的导入任务。 */
+  processRouteFiles(files: File[], folderId: string): Promise<void> {
+    const task = this.importRouteFiles(files, folderId).finally(() => this.imports.delete(task));
     this.imports.add(task);
     return task;
   }
 
-  /** @param {File[]} files 选定的轨迹。 @param {string} folderId 有效目标目录。 @returns {Promise<void>} 非法轨迹不进入应用状态。 */
-  private async importGpxFiles(files: File[], folderId: string): Promise<void> {
+  /**
+   * 按扩展名选择解析器，将不同格式的轨迹统一交给路线统计与数据校验。
+   * @param {File[]} files 选定的轨迹文件；扩展名不区分大小写。
+   * @param {string} folderId 导入目标文件夹，导入结束时仍须存在。
+   * @returns {Promise<void>} 追加通过校验的路线；单个文件失败时仍继续处理其余文件。
+   */
+  private async importRouteFiles(files: File[], folderId: string): Promise<void> {
     const newRoutes: RouteData[] = [];
     const currentRoutes = [...this.routes()];
+    this.operationError.set('');
 
     for (const file of files) {
       try {
-        const text = await file.text();
-        const { points, segmentStarts } = this.parseGpx(text);
+        const extension = file.name.match(/\.(gpx|fit)$/i)?.[1]?.toUpperCase();
+        if (extension !== 'GPX' && extension !== 'FIT') throw new Error('请选择 GPX 或 FIT 轨迹文件。');
+        const sourceFormat: RouteSourceFormat = extension;
+        const { points, segmentStarts } = sourceFormat === 'FIT'
+          ? parseFitRoute(await file.arrayBuffer())
+          : this.parseGpx(await file.text());
         const stats = calculateRouteStats(points, segmentStarts);
         const color = this.getDistinctColor([...currentRoutes, ...newRoutes]);
 
         const candidate: RouteData = {
           id: crypto.randomUUID(),
-          name: file.name.replace('.gpx', ''),
-          description: '从 GPX 导入',
-          folderId, points, segmentStarts, stats, color, isVisible: true
+          name: file.name.replace(/\.(gpx|fit)$/i, ''),
+          description: `从 ${sourceFormat} 导入`,
+          folderId, points, segmentStarts, stats, sourceFormat, color, isVisible: true
         };
         // 在改动共享状态前校验坐标及统计，避免一个非法文件使整份数据无法保存。
         normalizeData({ ...this.snapshot(), routes: [...this.routes(), ...newRoutes, candidate] });
         newRoutes.push(candidate);
       } catch (err) {
-        this.operationError.set(describeError(err, 'GPX 导入失败，请检查文件内容。'));
+        this.operationError.set(`${file.name}：${describeError(err, '轨迹导入失败，请检查文件内容。')}`);
       }
     }
     if (newRoutes.length > 0 && this.folders().some(folder => folder.id === folderId)) {

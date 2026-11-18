@@ -96,7 +96,7 @@ test('新版分段、缺高程及数据不足值可往返保存，非法元数�
   const route = { id: 'r', folderId: 'f', name: '测试', description: '', color: '#ff0000', isVisible: true,
     points: source, segmentStarts: [0], stats: calculateRouteStats(source, [0]) };
   const data = { version: 4, folders: [{ id: 'f', name: '测试', isExpanded: true }], routes: [route], settings: {} };
-  assert.deepEqual(normalizeData(normalizeData(data)).routes[0], route);
+  assert.deepEqual(normalizeData(normalizeData(data)).routes[0], { ...route, sourceFormat: 'GPX' });
   for (const mutate of [d => { d.routes[0].segmentStarts = [1]; }, d => { d.routes[0].stats.algorithmVersion = 2; }, d => { d.routes[0].stats.warnings = []; }, d => { d.routes[0].stats.distanceKm = null; }]) {
     const invalid = structuredClone(data); mutate(invalid); assert.throws(() => normalizeData(invalid));
   }

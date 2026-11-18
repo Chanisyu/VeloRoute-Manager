@@ -132,7 +132,7 @@ const MAPBOX_ZH_CN = {
           (click)="onManageClick.emit()"
           class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-8 rounded-full shadow-lg transform transition hover:scale-105 flex items-center gap-3 active:scale-95">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-          路线管理与 GPX 导入
+          路线管理与 GPX / FIT 导入
         </button>
       </div>
       

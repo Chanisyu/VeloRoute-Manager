@@ -1,5 +1,5 @@
-export const CURRENT_VERSION = 4;
-// 仅翻译校验提示中的字段名称；JSON 键名与数据迁移规则保持原样。
+export const CURRENT_VERSION = 5;
+// 校验提示使用界面上的中文字段名称，JSON 键名保留英文。
 const FIELD_LABELS = {
   "id": "标识符",
   "id 为空或重复": "标识符为空或重复",
@@ -26,6 +26,7 @@ const FIELD_LABELS = {
   "stats.minSlope": "最小坡度",
   "route.name": "路线名称",
   "route.description": "路线简介",
+  "route.sourceFormat": "路线来源格式",
   "route.isVisible": "路线显示状态",
   "settings": "应用设置",
   "settings.mapboxApiKey": "Mapbox 访问令牌",
@@ -88,7 +89,7 @@ function color(value, fallback) {
 }
 
 /**
- * 将历史存储、备份或 IPC 输入规范化为 v4；保留旧统计，不在迁移时重新计算。
+ * 将历史存储、备份或 IPC 输入规范化为 v5；保留旧统计，不在迁移时重新计算。
  * 旧数据缺少的界面字段使用兼容默认值；业务坐标、统计与关联错误不得静默修复。
  * @param {unknown} input 待读取或保存的数据，不信任其 TypeScript 类型。
  * @returns {import('./storage-schema.mjs').AppData} 可安全持久化的快照。
@@ -99,7 +100,7 @@ export function normalizeData(input) {
   if (typeof version === 'number' && version > CURRENT_VERSION) {
     throw new DataValidationError('数据版本较新，请使用兼容版本的软件读取。', 'UNSUPPORTED_VERSION');
   }
-  requireValid([1, 2, 3, 4].includes(version), 'version');
+  requireValid(Number.isInteger(version) && version >= 1 && version <= CURRENT_VERSION, 'version');
   requireValid(Array.isArray(input.folders) && Array.isArray(input.routes), 'folders/routes');
   if (input.timestamp !== undefined) requireValid(finite(input.timestamp, 'timestamp') >= 0, 'timestamp');
   const folderIds = new Set();
@@ -115,6 +116,9 @@ export function normalizeData(input) {
   const routes = input.routes.map((route, i) => {
     requireValid(isRecord(route), 'route');
     requireValid(folderIds.has(route.folderId), 'route.folderId 未关联有效文件夹');
+    // v1 到 v4 只支持 GPX；v5 必须提供来源，避免丢失 FIT 来源后静默误标为 GPX。
+    const sourceFormat = version < 5 && route.sourceFormat === undefined ? 'GPX' : route.sourceFormat;
+    requireValid(sourceFormat === 'GPX' || sourceFormat === 'FIT', 'route.sourceFormat');
     requireValid(Array.isArray(route.points) && route.points.length >= 2, 'route.points 至少包含两个点');
     const points = Array.from(route.points).map(point => {
       requireValid(isRecord(point), 'point');
@@ -156,7 +160,7 @@ export function normalizeData(input) {
     return {
       id: identifier(route.id, routeIds), name: text(route.name, 'route.name'),
       description: text(route.description === undefined ? '' : route.description, 'route.description'), folderId: route.folderId,
-      points, stats, color: color(route.color, COLORS[i % COLORS.length]),
+      points, stats, sourceFormat, color: color(route.color, COLORS[i % COLORS.length]),
       isVisible: boolean(route.isVisible === undefined ? true : route.isVisible, 'route.isVisible'),
       ...(segmentStarts ? { segmentStarts } : {})
     };

@@ -96,18 +96,21 @@ import { RouteProfileComponent } from './route-profile.component';
                         [class.hover:border-blue-300]="selectedRoute()?.id !== route.id"
                     >
                         <div class="font-medium truncate">{{ route.name }}</div>
+                        <!-- 使用已保存的来源格式，重命名、编辑简介或移动路线后仍能正确识别文件类型。 -->
                         <div class="text-xs opacity-80 flex gap-2 mt-0.5">
-                        <span>{{ route.stats.distanceKm }}km</span>
-                        <span>•</span>
-                        <span>{{ route.stats.elevationGainM === null ? '爬升未知' : route.stats.elevationGainM + 'm' }}</span>
+                            <span>{{ route.stats.distanceKm }}km</span>
+                            <span>·</span>
+                            <span>{{ route.stats.elevationGainM === null ? '爬升未知' : route.stats.elevationGainM + 'm' }}</span>
+                            <span>·</span>
+                            <span>{{ route.sourceFormat }}</span>
                         </div>
                     </div>
                     }
                     <div class="pt-2 mt-2 border-t border-slate-200/50">
                         <label class="flex items-center justify-center gap-2 w-full border border-dashed border-slate-300 rounded p-2 text-xs text-slate-500 cursor-pointer hover:border-blue-400 hover:text-blue-500 hover:bg-white transition-colors">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                            导入 GPX 文件
-                            <input type="file" accept=".gpx" multiple class="hidden" (change)="onFileSelected($event, folder.id)">
+                            导入 GPX / FIT 文件
+                            <input type="file" accept=".gpx,.fit" multiple class="hidden" (change)="onFileSelected($event, folder.id)">
                         </label>
                     </div>
                 </div>
@@ -292,11 +295,12 @@ export class ManagementViewComponent implements OnInit {
     this.selectedRouteId.set(route.id);
   }
 
-  onFileSelected(event: Event, folderId: string) {
+  /** @param event 文件选择事件，允许混选 GPX 与 FIT。 @param folderId 目标文件夹。 @returns 无返回值；清空输入后可以重选同一文件。 */
+  onFileSelected(event: Event, folderId: string): void {
     const input = event.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       const files = Array.from(input.files);
-      this.service.processGpxFiles(files, folderId);
+      void this.service.processRouteFiles(files, folderId);
       input.value = '';
     }
   }
