@@ -1,6 +1,8 @@
 
 import { ChangeDetectionStrategy, Component, ElementRef, OnInit, ViewChild, OnDestroy, inject, computed, effect, input, output, signal, untracked, NgZone } from '@angular/core';
-import { Folder, RouteService, RouteData } from '../services/route.service';
+import { Folder, RouteService, RouteData, MapState } from '../services/route.service';
+import { AmapSettingsService } from '../services/amap-settings.service';
+import { AmapViewComponent } from './amap-view.component';
 import { FormsModule } from '@angular/forms';
 
 declare const mapboxgl: any;
@@ -12,7 +14,8 @@ interface RouteMapHoverEvent {
   lngLat: { lng: number; lat: number };
 }
 
-type BaseLayer = 'mapbox_outdoors' | 'osm';
+type MapboxLayer = 'mapbox_outdoors' | 'osm';
+type BaseLayer = MapboxLayer | 'amap';
 
 /** Mapbox 3.9.4 内置控件的中文文案；仅覆盖显示文本，不修改地图事件和地理数据。 */
 const MAPBOX_ZH_CN = {
@@ -35,13 +38,24 @@ const MAPBOX_ZH_CN = {
   selector: 'app-map-view',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [FormsModule],
+  imports: [FormsModule, AmapViewComponent],
   host: { 'class': 'block w-full h-full' },
   template: `
     <div class="relative w-full h-full">
       <!-- Map Container -->
       <!-- 'image-rendering: optimize-contrast' helps with sharpness on some WebKit screens -->
-      <div #mapContainer class="w-full h-full z-0" style="image-rendering: -webkit-optimize-contrast;"></div>
+      <div #mapContainer class="w-full h-full z-0" [class.invisible]="currentLayer() === 'amap'"
+          [attr.inert]="currentLayer() === 'amap' ? '' : null" style="image-rendering: -webkit-optimize-contrast;"></div>
+      @if (currentLayer() === 'amap') {
+        @if (amap.credentials(); as credentials) {
+          <!-- 凭据替换时重建隔离页，普通切页则保留已加载的地图。 -->
+          @for (pair of [credentials]; track pair) {
+            <app-amap-view [credentials]="pair" [camera]="amapCamera()" [active]="active()" [routes]="amapRoutes()"
+                [listHighlight]="listHoverId()" (hovered)="mapHoverId.set($event)" (selected)="onRouteSelect.emit($event)"
+                (cameraChange)="amapCamera.set($event)"></app-amap-view>
+          }
+        }
+      }
 
       <!-- 切页时仅卸载 Angular 控件，后台保留同一地图画布及已加载图层。 -->
       @if (active()) {
@@ -61,13 +75,16 @@ const MAPBOX_ZH_CN = {
                 
                 <div class="bg-white shadow-lg rounded border border-slate-200 overflow-hidden">
                     <div class="p-1 space-y-1">
-                        <button (click)="changeBaseLayer('mapbox_outdoors')" [class.bg-blue-50]="currentLayer === 'mapbox_outdoors'" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 flex items-center gap-2">
+                        <button (click)="changeBaseLayer('mapbox_outdoors')" [class.bg-blue-50]="currentLayer() === 'mapbox_outdoors'" [disabled]="mapboxUnavailable()" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 disabled:opacity-50 flex items-center gap-2">
                             <span class="w-3 h-3 rounded-full border border-slate-300 bg-green-100"></span> Outdoors (3D)
                         </button>
                         
                         <!-- OpenStreetMap Option -->
-                        <button (click)="changeBaseLayer('osm')" [class.bg-blue-50]="currentLayer === 'osm'" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 flex items-center gap-2">
+                        <button (click)="changeBaseLayer('osm')" [class.bg-blue-50]="currentLayer() === 'osm'" [disabled]="mapboxUnavailable()" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 disabled:opacity-50 flex items-center gap-2">
                             <span class="w-3 h-3 rounded-full border border-slate-300 bg-orange-100"></span> OpenStreetMap
+                        </button>
+                        <button (click)="changeBaseLayer('amap')" [class.bg-blue-50]="currentLayer() === 'amap'" class="w-full text-left px-3 py-2 text-xs font-semibold text-slate-700 rounded hover:bg-slate-100 flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full border border-slate-300 bg-blue-100"></span> 高德地图
                         </button>
                     </div>
                 </div>
@@ -163,7 +180,7 @@ const MAPBOX_ZH_CN = {
                     </div>
                     <h3 class="text-2xl font-bold text-slate-800">启用地图</h3>
                     <p class="text-slate-600 mt-2">
-                        启用地图需要 Mapbox 公共访问令牌。可先跳过，稍后在设置中配置。
+                        可配置 Mapbox 访问令牌，或在设置中启用高德地图。
                     </p>
                 </div>
 
@@ -222,6 +239,7 @@ const MAPBOX_ZH_CN = {
                 </div>
                 
                 <div class="mt-6 text-center">
+                    <button (click)="changeBaseLayer('amap')" class="block mx-auto mb-2 text-sm text-blue-700 hover:underline">{{ amap.credentials() ? '使用高德地图' : '前往设置配置高德地图' }}</button>
                     <a href="https://mapbox.com" target="_blank" class="text-xs text-slate-400 hover:text-blue-600 hover:underline transition-colors">
                         前往 Mapbox 官网获取访问令牌
                     </a>
@@ -236,10 +254,12 @@ const MAPBOX_ZH_CN = {
 /** 管理同一会话中的地图实例，并在地图页可见时同步路线图层与交互。 */
 export class MapViewComponent implements OnInit, OnDestroy {
   @ViewChild('mapContainer', { static: true }) mapContainer!: ElementRef;
+  @ViewChild(AmapViewComponent) private amapView?: AmapViewComponent;
   
   service = inject(RouteService);
   zone = inject(NgZone);
   onManageClick = output<void>();
+  onSettingsClick = output<void>();
   onRouteSelect = output<string>();
   readonly active = input(true);
 
@@ -247,7 +267,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
   private popup: any = null;
   private mapInitFrame?: number;
   private mapToken?: string;
-  private listHoverId?: string;
+  protected readonly listHoverId = signal<string | undefined>(undefined);
   // 列表订阅地图悬停以复用普通悬停样式；图层维护逻辑用 untracked 读取，避免悬停触发全量同步。
   protected readonly mapHoverId = signal<string | undefined>(undefined);
   private highlightedId?: string;
@@ -265,7 +285,20 @@ export class MapViewComponent implements OnInit, OnDestroy {
     return ids;
   });
   
-  currentLayer: BaseLayer = 'mapbox_outdoors';
+  protected readonly amap = inject(AmapSettingsService);
+  protected readonly amapCamera = signal<MapState | null>(null);
+  protected readonly mapboxUnavailable = computed(() => !this.service.appSettings().mapboxApiKey && !!this.amap.credentials());
+  private readonly mapboxLayer = signal<MapboxLayer>('mapbox_outdoors');
+  private readonly preferAmap = signal(false);
+  protected readonly currentLayer = computed<BaseLayer>(() =>
+    this.amap.credentials() && (this.preferAmap() || this.mapboxUnavailable()) ? 'amap' : this.mapboxLayer()
+  );
+  /** 高德页只订阅应绘制的路线，并与 Mapbox 共用文件夹对比颜色口径。 */
+  protected readonly amapRoutes = computed(() => {
+    const colors = new Map(this.isComparisonMode() ? this.service.folders().map(folder => [folder.id, folder.color]) : []);
+    return this.service.routes().filter(route => route.isVisible)
+      .map(route => ({ route, color: colors.get(route.folderId) || route.color }));
+  });
   
   // 0 表示等待样式；每次 style.load 都通知路线同步，即使样式由地图内部重新加载。
   private readonly styleRevision = signal(0);
@@ -295,6 +328,10 @@ export class MapViewComponent implements OnInit, OnDestroy {
         return;
       }
 
+      if (this.currentLayer() === 'amap') {
+        this.showKeyModal.set(false);
+        return;
+      }
       const { mapboxApiKey, mapboxKeyValid, dontRemindMapbox } = this.service.appSettings();
       this.zone.runOutsideAngular(() => {
         // 只有实际使用的令牌变化才释放实例，临时校验失败时可继续查看已加载的地图。
@@ -306,7 +343,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
     }, { allowSignalWrites: true });
 
     effect(() => {
-      if (!this.active() || this.styleRevision() === 0) return;
+      if (!this.active() || this.currentLayer() === 'amap' || this.styleRevision() === 0) return;
       const routes = this.service.routes();
       const folders = this.service.folders();
       const isComparisonMode = this.isComparisonMode();
@@ -332,7 +369,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
   /** @returns 无返回值；离开地图页时暂停临时交互，保留图层、画布及视角。 */
   private pauseMapInteractions(): void {
     this.map?.stop();
-    this.listHoverId = undefined;
+    this.listHoverId.set(undefined);
     this.clearMapHover();
     this.syncRouteHighlight();
     clearTimeout(this.hideTimer);
@@ -531,10 +568,11 @@ export class MapViewComponent implements OnInit, OnDestroy {
       if (!this.map) return;
 
       const foldersById = new Map(folders.map(folder => [folder.id, folder]));
-      const hoveredRoute = this.listHoverId && routes.find(route => route.id === this.listHoverId);
+      const hoverId = untracked(this.listHoverId);
+      const hoveredRoute = hoverId && routes.find(route => route.id === hoverId);
       // 路线行被移除或收起时，浏览器可能不会发出 mouseleave。
       if (!hoveredRoute || !foldersById.get(hoveredRoute.folderId)?.isExpanded) {
-          this.listHoverId = undefined;
+          this.listHoverId.set(undefined);
       }
       const visibleRoutes = routes.filter(r => r.isVisible);
       const visibleIds = new Set(visibleRoutes.map(r => r.id));
@@ -681,13 +719,13 @@ export class MapViewComponent implements OnInit, OnDestroy {
   private clearMapHover(): void {
       if (untracked(this.mapHoverId) === undefined) return;
       this.mapHoverId.set(undefined);
-      this.map.getCanvas().style.cursor = '';
-      this.popup.remove();
+      if (this.map) this.map.getCanvas().style.cursor = '';
+      this.popup?.remove();
   }
 
   /** @returns 无返回值；优先应用列表悬停，恢复上一条路线的普通样式与层级。 */
   private syncRouteHighlight(): void {
-      const next = this.listHoverId ?? untracked(this.mapHoverId);
+      const next = untracked(this.listHoverId) ?? untracked(this.mapHoverId);
       if (this.highlightedId !== undefined && this.highlightedId !== next) {
           this.paintRouteHighlight(this.highlightedId, false);
       }
@@ -725,8 +763,8 @@ export class MapViewComponent implements OnInit, OnDestroy {
   setListHover(id?: string): void {
       this.zone.runOutsideAngular(() => {
           if (id !== undefined) this.clearMapHover();
-          this.listHoverId = id;
-          this.syncRouteHighlight();
+          this.listHoverId.set(id);
+          if (this.currentLayer() !== 'amap') this.syncRouteHighlight();
       });
   }
 
@@ -757,7 +795,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
   /** @returns 当前选中的底图样式；更换令牌后重建实例也复用同一选项。 */
   private getBaseStyle() {
-    if (this.currentLayer === 'mapbox_outdoors') return 'mapbox://styles/mapbox/outdoors-v12';
+    if (this.mapboxLayer() === 'mapbox_outdoors') return 'mapbox://styles/mapbox/outdoors-v12';
     return {
       version: 8,
       sources: {
@@ -772,14 +810,35 @@ export class MapViewComponent implements OnInit, OnDestroy {
     };
   }
 
-  /** @param layer 要显示的底图。 @returns 无返回值；样式就绪前暂停路线同步。 */
+  /** @param layer 要显示的底图。 @returns 无返回值；跨供应商切换时复用路线数据和相机位置。 */
   changeBaseLayer(layer: BaseLayer): void {
-    if (this.currentLayer === layer) return;
-    this.currentLayer = layer;
-    if (this.map) {
-      this.styleRevision.set(0);
-      // 采用完整的样式切换，确保 style.load 能统一恢复应用添加的路线图层。
-      this.zone.runOutsideAngular(() => this.map.setStyle(this.getBaseStyle(), { diff: false }));
+    const previous = this.currentLayer();
+    if (previous === layer) return;
+    if (layer === 'amap') {
+      this.zone.runOutsideAngular(() => this.pauseMapInteractions());
+      if (this.map) {
+        const { lng, lat } = this.map.getCenter();
+        this.amapCamera.set({ center: { lng, lat }, zoom: this.map.getZoom(), pitch: 0, bearing: 0 });
+      }
+      this.preferAmap.set(true);
+      if (!this.amap.credentials()) this.onSettingsClick.emit();
+    } else {
+      this.clearMapHover();
+      this.preferAmap.set(false);
+      const styleChanged = this.mapboxLayer() !== layer;
+      this.mapboxLayer.set(layer);
+      const camera = previous === 'amap' ? this.amapCamera() : null;
+      if (camera) this.service.mapState.set(camera);
+      if (this.map) {
+        this.zone.runOutsideAngular(() => {
+          if (camera) this.map.jumpTo({ center: camera.center, zoom: camera.zoom });
+          if (styleChanged) {
+            this.styleRevision.set(0);
+            // 只在同一引擎的底图样式实际变化时重建样式和路线。
+            this.map.setStyle(this.getBaseStyle(), { diff: false });
+          }
+        });
+      }
     }
     clearTimeout(this.hideTimer);
     clearTimeout(this.fadeTimer);
@@ -812,6 +871,10 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
   /** @param immediate 是否立即定位，用于首次展示。 @returns 无返回值；没有可见路线时保持当前视角。 */
   fitAllBounds(immediate = false): void {
+    if (this.currentLayer() === 'amap') {
+        this.amapView?.fitRoutes();
+        return;
+    }
     if (!this.map) return;
     const routes = this.service.routes().filter(r => r.isVisible);
     if (routes.length === 0) return;

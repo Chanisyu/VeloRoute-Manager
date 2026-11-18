@@ -20,11 +20,17 @@
             "tsConfig": "tsconfig.app.json",
             "assets": [
               {
+                "glob": "*",
+                "input": "src/amap-frame",
+                "output": "amap"
+              },
+              {
                 "glob": "mapbox-gl.js",
                 "input": "node_modules/mapbox-gl/dist",
                 "output": "vendor"
               }
             ],
+            "allowedCommonJsDependencies": ["coordtransform"],
             "styles": [
               "node_modules/mapbox-gl/dist/mapbox-gl.css",
               "src/styles.css"

@@ -24,6 +24,7 @@
 | `shared/storage-schema.mjs`、`storage/store.mjs` | 跨进程数据校验/迁移与桌面原子存储；类型声明为相邻 `.d.mts`。 |
 | `src/component/storage-status.component.ts` | 保存反馈、失败重试及读取失败后的安全恢复入口。 |
 | `src/component/map-view.component.ts` | 底图、地形、路线图层、文件夹对比。悬停时临时置顶可见的高亮路线，结束后恢复图层添加顺序。右键列表和点击地图线条共用详情入口。 |
+| `src/component/amap-view.component.ts`、`src/amap-frame/index.html` | 高德 JS API 2.0 的宿主与隔离页，固定消息同步可见轨迹、视角与交互。 |
 | `src/component/management-view.component.ts`、`settings-view.component.ts` | 文件夹与路线编辑、GPX/备份导入、Mapbox 设置；组件使用内联模板。 |
 | `main.js`、`preload.js` | 窗口、文件持久化、`save-data/load-data` IPC；桥接为 `window.electronAPI.saveData/loadData`。 |
 | `GPX_example/`、`FIT_example/`、`Docs/` | 前两者含 GPX 和码表 FIT 样例；`Docs/` 中的历史提示词与功能设想不代表已实现或已授权需求。 |
@@ -40,7 +41,8 @@
 - 导出备份为 v6（含时间戳与 Mapbox Token），兼容无版本及 v1 至 v5，早于 v5 且缺少导入来源的路线标为 GPX。统一校验后先落盘再替换界面。浏览器使用 `velo_data/velo_data_backup`，只在缺少新键时迁移旧三键；桌面不再维护浏览器数据镜像。
 - 保存防抖 400ms；正常关闭等待待保存快照、导入、恢复及在途写入，失败返回应用。不要绕过校验直接设置加载结果，也不要把读取失败当作首次启动。主进程以单实例锁保护同一数据目录。
 - 普通保存反馈显示 3 秒后渐隐 300ms 并移除；进行中及错误状态持续可见。新状态或通知须取消旧计时，展示状态不参与持久化。
-- 地图实例跨页保留，后台隐藏画布、停用交互并推迟路线同步。令牌变化时才重建实例，`mapState` 在内存中为重建保留相机视角。底图仅有 Outdoors v12 和 OSM 栅格，样式就绪后恢复路线，首次倾斜时加载地形。重启后视角、底图和对比模式重置。
+- 底图支持 Outdoors v12、OSM 栅格（两者共用 Mapbox）及高德地图（独立 JS API 2.0）。地图实例跨页保留，后台隐藏画布、停用交互并推迟路线同步。更换凭据重建对应地图，Mapbox 样式就绪后恢复路线，首次倾斜时加载地形。重启后视角、底图和对比模式重置；仅配置高德时直接显示高德。
+- 高德凭据由主进程通过 Electron `safeStorage` 独立加密保存，浏览器预览使用 `sessionStorage`，路线存储和备份不含高德凭据。高德远程脚本仅在 sandbox 隔离页加载；EPSG:4326 轨迹在宿主用固定版本的 `coordtransform` 本地转为 GCJ‑02 显示，各原始分段、统计和持久化坐标继续使用原数据。
 - 地图与管理页通过 `routesByFolder` 共用路线分组缓存。地图渲染在 Angular 区域外运行，按已提交的路线和颜色差异更新图层。浮窗读取当前路线元数据，以纯文本填充名称。
 
 ## 工作流与待处理项

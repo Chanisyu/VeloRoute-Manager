@@ -20,6 +20,7 @@ import { SettingsViewComponent } from './component/settings-view.component';
         <app-map-view
           [active]="currentMode() === 'map'"
           (onManageClick)="setMode('manage')"
+          (onSettingsClick)="setMode('settings')"
           (onRouteSelect)="goToManageWithRoute($event)"
         ></app-map-view>
       </div>

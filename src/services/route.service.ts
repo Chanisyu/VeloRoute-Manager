@@ -8,6 +8,7 @@ import {
   type AppData, type AppDataBackup, type LoadResult, type RouteSourceFormat, type SaveResult
 } from '../../shared/storage-schema.mjs';
 import { loadBrowserData, saveBrowserData } from '../../shared/browser-storage.mjs';
+import type { AmapCredentials } from './amap-settings.service';
 export type { RouteData, Folder, RouteStats } from '../../shared/storage-schema.mjs';
 
 export interface MapState {
@@ -19,6 +20,8 @@ interface ElectronAPI {
   saveData: (data: AppData) => Promise<SaveResult>;
   restoreData: (data: AppData) => Promise<SaveResult>;
   loadData: () => Promise<LoadResult>;
+  loadAmapCredentials: () => Promise<AmapCredentials | null>;
+  saveAmapCredentials: (credentials: AmapCredentials | null) => Promise<void>;
   onPrepareClose: (callback: (requestId: string) => void) => void;
   completeClose: (requestId: string, success: boolean) => void;
 }

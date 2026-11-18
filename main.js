@@ -1,5 +1,5 @@
 
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
@@ -49,6 +49,7 @@ if (!app.isPackaged) {
 
 const useDevServer = !app.isPackaged && process.env.VELOROUTE_DEV_SERVER === '1';
 const DATA_FILE = path.join(app.getPath('userData'), 'storage.json');
+const AMAP_CREDENTIALS_FILE = path.join(app.getPath('userData'), 'amap-credentials.bin');
 const storageReady = import('./storage/store.mjs').then(({ AtomicStore }) => new AtomicStore(DATA_FILE));
 let rendererReady = false;
 let allowClose = false;
@@ -151,6 +152,43 @@ for (const [channel, operation] of [
     return operation(await storageReady, data);
   });
 }
+
+/** @param {unknown} value 本地解密数据或渲染进程输入。 @returns {boolean} 两项字段均可安全作为 JS API 凭据。 */
+function validAmapCredentials(value) {
+  const validPart = part => typeof part === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(part);
+  return !!value && validPart(value.key) && validPart(value.securityCode);
+}
+
+ipcMain.handle('load-amap-credentials', event => {
+  if (!trustedSender(event)) throw new Error('拒绝不可信页面的凭据访问');
+  try {
+    const credentials = JSON.parse(safeStorage.decryptString(fs.readFileSync(AMAP_CREDENTIALS_FILE)));
+    if (validAmapCredentials(credentials)) return credentials;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+  }
+  throw new Error('无法读取本机高德地图凭据');
+});
+
+ipcMain.handle('save-amap-credentials', (event, credentials) => {
+  if (!trustedSender(event)) throw new Error('拒绝不可信页面的凭据访问');
+  if (credentials === null) {
+    fs.rmSync(AMAP_CREDENTIALS_FILE, { force: true });
+    return;
+  }
+  if (!validAmapCredentials(credentials) || !safeStorage.isEncryptionAvailable()) {
+    throw new Error('高德地图凭据无效或系统加密不可用');
+  }
+  // 单独加密落盘，既不进入路线快照与备份，也不在写入失败时覆盖先前凭据。
+  const { key, securityCode } = credentials;
+  const temporary = `${AMAP_CREDENTIALS_FILE}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, safeStorage.encryptString(JSON.stringify({ key, securityCode })), { flag: 'wx', flush: true });
+    fs.renameSync(temporary, AMAP_CREDENTIALS_FILE);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
+});
 
 ipcMain.on('storage-ready', event => {
   if (trustedSender(event)) rendererReady = true;

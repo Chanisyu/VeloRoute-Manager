@@ -17,7 +17,7 @@
 ### 高级地图可视化
 
 * **3D 地形渲染**：基于 Mapbox GL JS v3，支持真实的 3D 地形（DEM）和大气雾效。
-* **图层切换**：支持在 Mapbox Outdoors（3D 户外风格）和 OpenStreetMap（平面风格）之间无缝切换。
+* **底图切换**：支持 Mapbox Outdoors、OpenStreetMap 和高德地图。三种底图均可叠加导入的路线。
 * **动态视角**：支持地图倾斜（Pitch）和旋转，按住右键即可查看地形起伏。
 * **对比模式 (Comparison Mode)**：一键切换视图模式，按文件夹颜色对路线进行着色，便于比较不同类型的路线集合。
 
@@ -81,13 +81,20 @@ npm run dev
 
 ## Mapbox 配置说明
 
-为了体验完整的 3D 地形和户外地图风格，你需要一个 Mapbox Public Access Token。**它是必须的**。
+使用 Outdoors (3D) 和 OpenStreetMap 需要 Mapbox Public Access Token。
 
 1. 前往 [Mapbox.com](https://www.google.com/url?sa=E&q=https%3A%2F%2Fmapbox.com) 注册并获取免费的 Public Token。
 2. 启动应用后，界面会提示输入 API Key。
    * *若跳过，后续可在设置中修改。*
 3. 输入 Key 后，应用会自动验证并保存到本地设置中。
-   * *注意：如果没有 API Key，地图将显示空白。*
+
+## 高德地图配置
+
+1. 在[高德开放平台](https://lbs.amap.com/api/javascript-api-v2/prerequisites)申请 Web 端（JS API）Key 和安全密钥。
+2. 在应用的**设置 → 地图设置**填入两项，点击**保存高德配置**。
+3. 返回地图并选择**切换底图 → 高德地图**。仅配置高德凭据时，应用直接显示高德底图。
+
+高德使用二维底图。叠加路线时在本地转换显示坐标，原始点与统计保存在路线数据中。桌面凭据独立加密存储，网页预览按标签页会话保存。
 
 ## 项目结构
 
@@ -110,4 +117,4 @@ preload.js                    # Electron 预加载脚本 (Context Bridge)
 
 ## 许可证
 
-项目许可证见 [LICENSE](LICENSE)。地图数据版权归 Mapbox 和 OpenStreetMap 所有。
+项目许可证见 [LICENSE](LICENSE)。底图数据及署名遵循 Mapbox、OpenStreetMap 和高德地图各自的服务条款。

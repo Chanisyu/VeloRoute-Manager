@@ -4,6 +4,7 @@
 
 - 正式桌面数据：`app.getPath('userData')/storage.json`，Windows 通常为 `%APPDATA%/veloroute-manager/storage.json`。
 - 开发数据：`%APPDATA%/veloroute-manager-development/`；测试始终使用独立临时目录。
+- 高德 Key 和安全密钥通过 Electron `safeStorage` 加密保存在同目录的 `amap-credentials.bin`。路线导入、导出和备份恢复不读写该文件。浏览器预览使用当前标签页的 `sessionStorage`。
 - 当前格式为 `version: 6`，保留 `folders/routes/settings`，导出备份另含 `timestamp`。兼容无版本和 v1 至 v5 数据。旧客户端拒绝读取 v6，避免误解设备汇总。
 - 路线的 `sourceFormat` 为 `GPX` 或 `FIT`。v5 起持久化和备份要求提供该字段。v1 至 v4 的缺省来源为 `GPX`，历史名称和统计保留。
 - GPX 轨迹统计保存 `algorithmVersion` 和质量提示。新版 FIT 设备汇总保存 `stats.source: 'fit-session'`，与算法版本互斥，四项允许独立为空。v5 FIT 的旧统计原样迁移。新路线保留 `segmentStarts`，逐点缺高程为 `null`。口径见 [STATISTICS.md](STATISTICS.md)。

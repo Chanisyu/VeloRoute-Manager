@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>高德地图</title>
+  <style>
+    html, body, #map { margin: 0; width: 100%; height: 100%; }
+    .route-info { background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 9px; font: 13px sans-serif; pointer-events: none; }
+    .route-info span { color: #64748b; }
+  </style>
+</head>
+<body><div id="map"></div>
+<!-- Electron 文件页面中的沙盒隔离页无法读取同目录脚本，因此将本地入口与页面一起加载。 -->
+<script>
+(() => {
+  'use strict';
+
+  const channel = 'veloroute-amap';
+  const routes = new Map();
+  const mapElement = document.getElementById('map');
+  const baseWidth = 4;
+  const baseOpacity = 0.85;
+  let apiMap;
+  let info;
+  let active = true;
+  let mapHover;
+  let listHover;
+  let highlighted;
+  let order = 50;
+  let fitInitialRoutes = false;
+
+  /** @param {string} kind 固定事件名。 @param {object} payload 交互所需字段。 @returns {void} 向宿主回传最少信息。 */
+  function report(kind, payload = {}) {
+    window.parent.postMessage({ channel, kind, ...payload }, '*');
+  }
+
+  /** @param {object} options 凭据和已转换的初始相机。 @returns {void} 通过官方 JS API 初始化二维底图。 */
+  function initialize({ credentials, camera }) {
+    fitInitialRoutes = !camera;
+    window._AMapSecurityConfig = { securityJsCode: credentials.securityCode };
+    const script = document.createElement('script');
+    const url = new URL('https://webapi.amap.com/maps');
+    url.search = new URLSearchParams({ v: '2.0', key: credentials.key, callback: 'startVeloRouteMap' }).toString();
+    window.startVeloRouteMap = () => {
+      try {
+        apiMap = new AMap.Map(mapElement, {
+          viewMode: '2D',
+          center: camera?.center ?? [114.252, 22.717],
+          zoom: Math.min(20, Math.max(2, camera?.zoom ?? 13))
+        });
+        info = new AMap.InfoWindow({ isCustom: true, closeWhenClickMap: true, offset: new AMap.Pixel(0, -10) });
+        apiMap.on('complete', () => report('ready'));
+        apiMap.on('moveend', reportCamera);
+        apiMap.on('zoomend', reportCamera);
+        mapElement.addEventListener('mouseleave', clearHover);
+      } catch {
+        report('error');
+      }
+    };
+    script.src = url.href;
+    script.onerror = () => report('error');
+    document.head.append(script);
+  }
+
+  /** @returns {void} 仅报告用户停下后的视角，用于跨底图切换。 */
+  function reportCamera() {
+    if (!active) return;
+    const center = apiMap.getCenter();
+    report('camera', { lng: center.getLng(), lat: center.getLat(), zoom: apiMap.getZoom() });
+  }
+
+  /** @returns {void} 没有可见路线时保持视角。 */
+  function fitRoutes() {
+    const overlays = [...routes.values()].flatMap(route => route.lines);
+    if (overlays.length) apiMap.setFitView(overlays, true, [50, 50, 50, 50]);
+  }
+
+  /** @param {object} entry 路线在本页的显示记录。 @param {boolean} emphasized 是否高亮。 @returns {void} 应用临时线宽和层级。 */
+  function paint(entry, emphasized) {
+    for (const line of entry.lines) {
+      line.setOptions({
+        strokeColor: entry.color,
+        strokeWeight: emphasized ? 7 : baseWidth,
+        strokeOpacity: emphasized ? 1 : baseOpacity,
+        zIndex: emphasized ? 1000000 : entry.order
+      });
+    }
+  }
+
+  /** @param {boolean} repaint 叠加物重建时强制恢复高亮。 @returns {void} 列表优先，恢复上一条路线的普通顺序。 */
+  function syncHighlight(repaint = false) {
+    const next = active ? (listHover ?? mapHover) : undefined;
+    if (next === highlighted && !repaint) return;
+    if (routes.has(highlighted)) paint(routes.get(highlighted), false);
+    highlighted = next;
+    if (routes.has(highlighted)) paint(routes.get(highlighted), true);
+  }
+
+  /** @returns {void} 清除地图悬停，通知宿主取消路线行高亮。 */
+  function clearHover() {
+    if (!mapHover) return;
+    mapHover = undefined;
+    info.close();
+    apiMap.setDefaultCursor('default');
+    syncHighlight();
+    report('hover');
+  }
+
+  /** @param {string} id 当前命中的路线。 @param {object} lnglat 浮窗锚点。 @returns {void} 显示当前路线名称及里程。 */
+  function hover(id, lnglat) {
+    if (!active || listHover) return;
+    const entry = routes.get(id);
+    mapHover = id;
+    apiMap.setDefaultCursor('pointer');
+    const detail = document.createElement('div');
+    detail.className = 'route-info';
+    const name = document.createElement('strong');
+    name.textContent = entry.name;
+    const distance = document.createElement('span');
+    distance.textContent = `${entry.distance} km`;
+    detail.append(name, document.createElement('br'), distance);
+    info.setContent(detail);
+    info.open(apiMap, lnglat);
+    syncHighlight();
+    report('hover', { id });
+  }
+
+  /** @param {string} id 路线标识。 @param {number[][]} path 同一分段内的坐标。 @returns {object} 绑定地图交互的高德折线。 */
+  function createLine(id, path) {
+    const line = new AMap.Polyline({ path, lineJoin: 'round', lineCap: 'round' });
+    line.on('mouseover', event => hover(id, event.lnglat));
+    // 重叠路线交替命中时，旧路线的离开事件不得清除新路线的提示。
+    line.on('mouseout', () => { if (mapHover === id) clearHover(); });
+    line.on('click', () => { if (active) report('select', { id }); });
+    return line;
+  }
+
+  /** @param {object} delta 宿主发送的路线增删改。 @returns {void} 重用未变化的折线，保持分段与顺序。 */
+  function updateRoutes({ changed, removed }) {
+    for (const id of removed) {
+      if (mapHover === id) clearHover();
+      const entry = routes.get(id);
+      if (entry?.lines.length) apiMap.remove(entry.lines);
+      routes.delete(id);
+    }
+    for (const { id, name, distance, color, paths } of changed) {
+      const entry = routes.get(id) ?? { order: order++, lines: [] };
+      Object.assign(entry, { name, distance, color });
+      routes.set(id, entry);
+      if (paths) {
+        if (entry.lines.length) apiMap.remove(entry.lines);
+        entry.lines = paths.map(path => createLine(id, path));
+        if (entry.lines.length) apiMap.add(entry.lines);
+      }
+      paint(entry, false);
+    }
+    syncHighlight(true);
+    if (fitInitialRoutes && routes.size) {
+      fitInitialRoutes = false;
+      fitRoutes();
+    }
+  }
+
+  window.addEventListener('message', event => {
+    const data = event.data;
+    if (event.source !== window.parent || data?.channel !== channel) return;
+    if (data.kind === 'init' && !apiMap) initialize(data);
+    if (!apiMap) return;
+    if (data.kind === 'routes') updateRoutes(data);
+    if (data.kind === 'fit') fitRoutes();
+    if (data.kind === 'interaction') {
+      active = data.active;
+      listHover = data.highlight;
+      if (!active || listHover) clearHover();
+      syncHighlight();
+    }
+  });
+})();
+</script>
+</body>
+</html>

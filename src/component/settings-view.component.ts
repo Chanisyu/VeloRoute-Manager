@@ -2,6 +2,7 @@
 import { Component, inject, signal, computed, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { RouteService } from '../services/route.service';
+import { AmapSettingsService } from '../services/amap-settings.service';
 
 @Component({
   selector: 'app-settings-view',
@@ -60,9 +61,39 @@ import { RouteService } from '../services/route.service';
                     }
                     
                     <p class="mt-2 text-xs text-slate-400">
-                        显示地图需要有效的 Mapbox 公共访问令牌。
+                        使用 Outdoors (3D) 或 OpenStreetMap 需要配置 Mapbox 公共访问令牌。
                         <a href="https://mapbox.com" target="_blank" class="text-blue-500 hover:underline">前往官网获取</a>。
                     </p>
+                </div>
+                <div class="border-t border-slate-100 pt-4 space-y-3">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <label for="settings-amap-key" class="block text-sm font-medium text-slate-700 mb-1">高德地图 Key</label>
+                            <input id="settings-amap-key" type="text" autocomplete="off" spellcheck="false" maxlength="128"
+                                [ngModel]="amapKeyDraft ?? amap.credentials()?.key ?? ''" (ngModelChange)="amapKeyDraft = $event; amapSaved.set(false)"
+                                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-slate-700 text-white border-slate-600">
+                        </div>
+                        <div>
+                            <label for="settings-amap-code" class="block text-sm font-medium text-slate-700 mb-1">高德地图安全密钥</label>
+                            <input id="settings-amap-code" type="password" autocomplete="off" maxlength="128"
+                                [ngModel]="amapCodeDraft ?? amap.credentials()?.securityCode ?? ''" (ngModelChange)="amapCodeDraft = $event; amapSaved.set(false)"
+                                class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-slate-700 text-white border-slate-600">
+                        </div>
+                    </div>
+                    <p class="text-xs text-slate-500">填写高德开放平台 Web 端（JS API）的凭据，保存后到地图页切换底图。</p>
+                    <div class="flex flex-wrap items-center gap-3">
+                        <button (click)="saveAmap()" [disabled]="amap.busy()"
+                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">保存高德配置</button>
+                        @if (amap.credentials() || amap.error()) {
+                            <button (click)="saveAmap(true)" [disabled]="amap.busy()"
+                                class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50">清除高德配置</button>
+                        }
+                        @if (amap.error()) {
+                            <span role="alert" class="text-sm text-red-600">{{ amap.error() }}</span>
+                        } @else if (amapSaved()) {
+                            <span role="status" class="text-sm text-green-700">{{ amap.credentials() ? '高德配置已保存。' : '高德配置已清除。' }}</span>
+                        }
+                    </div>
                 </div>
             </div>
         </div>
@@ -100,6 +131,10 @@ import { RouteService } from '../services/route.service';
 })
 export class SettingsViewComponent {
   service = inject(RouteService);
+  readonly amap = inject(AmapSettingsService);
+  readonly amapSaved = signal(false);
+  amapKeyDraft?: string;
+  amapCodeDraft?: string;
   onBack = output<void>();
   
   tempKey = '';
@@ -120,5 +155,20 @@ export class SettingsViewComponent {
       const success = await this.service.validateMapboxKey(this.tempKey);
       
       this.isValidating.set(false);
+  }
+
+  /** @param clear 是否清除本机凭据。 @returns 本机保存结束；失败保留编辑草稿。 */
+  async saveAmap(clear = false): Promise<void> {
+    const saved = this.amap.credentials();
+    const credentials = clear ? null : {
+      key: (this.amapKeyDraft ?? saved?.key ?? '').trim(),
+      securityCode: (this.amapCodeDraft ?? saved?.securityCode ?? '').trim()
+    };
+    this.amapSaved.set(false);
+    if (await this.amap.save(credentials)) {
+      this.amapKeyDraft = undefined;
+      this.amapCodeDraft = undefined;
+      this.amapSaved.set(true);
+    }
   }
 }
