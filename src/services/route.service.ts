@@ -414,7 +414,7 @@ export class RouteService {
   }
 
   /**
-   * 按扩展名选择解析器，将不同格式的轨迹统一交给路线统计与数据校验。
+   * 按扩展名选择解析器和统计来源，统一校验可持久化的路线数据。
    * @param {File[]} files 选定的轨迹文件；扩展名不区分大小写。
    * @param {string} folderId 导入目标文件夹，导入结束时仍须存在。
    * @returns {Promise<void>} 追加通过校验的路线；单个文件失败时仍继续处理其余文件。
@@ -429,10 +429,9 @@ export class RouteService {
         const extension = file.name.match(/\.(gpx|fit)$/i)?.[1]?.toUpperCase();
         if (extension !== 'GPX' && extension !== 'FIT') throw new Error('请选择 GPX 或 FIT 轨迹文件。');
         const sourceFormat: RouteSourceFormat = extension;
-        const { points, segmentStarts } = sourceFormat === 'FIT'
+        const { points, segmentStarts, stats } = sourceFormat === 'FIT'
           ? parseFitRoute(await file.arrayBuffer())
           : this.parseGpx(await file.text());
-        const stats = calculateRouteStats(points, segmentStarts);
         const color = this.getDistinctColor([...currentRoutes, ...newRoutes]);
 
         const candidate: RouteData = {
@@ -454,11 +453,11 @@ export class RouteService {
   }
 
   /**
-   * 严格解析 GPX 的直接 trk/trkseg/trkpt 子节点，保留分段、原始点序及缺失高程。
+   * 严格解析 GPX 的直接 trk/trkseg/trkpt 子节点，按保留的点序和分段计算 GPX 统计。
    * @param text 原始 XML 文本，不执行其中任何内容。
-   * @returns 有至少两个轨迹点的原始数据；非法 XML、字段或不支持的路线格式抛错。
+   * @returns 至少两个轨迹点、原始分段和 GPX 统计；非法 XML、字段或不支持的格式抛错。
    */
-  private parseGpx(text: string): { points: RoutePoint[]; segmentStarts: number[] } {
+  private parseGpx(text: string): { points: RoutePoint[]; segmentStarts: number[]; stats: RouteStats } {
     const xml = new DOMParser().parseFromString(text, 'application/xml');
     if (xml.getElementsByTagNameNS('*', 'parsererror').length || xml.documentElement.localName !== 'gpx') {
       throw new Error('文件不是有效的 GPX 轨迹 XML。');
@@ -483,7 +482,7 @@ export class RouteService {
       }
     }
     if (points.length < 2) throw new Error('轨迹至少需要两个轨迹点。');
-    return { points, segmentStarts };
+    return { points, segmentStarts, stats: calculateRouteStats(points, segmentStarts) };
   }
 
   private getDistinctColor(existingRoutes: RouteData[]): string {

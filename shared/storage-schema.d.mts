@@ -2,6 +2,8 @@
 export interface RouteStats {
   distanceKm: number; elevationGainM: number | null; elevationLossM: number | null;
   avgSlope: number | null; maxSlope: number | null; minSlope: number | null;
+  /** FIT 会话汇总的来源标记，与基于轨迹重算的算法版本互斥。 */
+  source?: 'fit-session';
   algorithmVersion?: 1;
   warnings?: ('missing-elevation' | 'sparse-sampling' | 'duplicate-position')[];
 }
@@ -25,7 +27,7 @@ export type LoadResult =
   | { status: 'missing' }
   | { status: 'error'; error: string };
 export type SaveResult = { success: true } | { success: false; error: string };
-export const CURRENT_VERSION: 5;
+export const CURRENT_VERSION: 6;
 export class DataValidationError extends Error { code: string; constructor(message: string, code?: string); }
 /** 完整校验并迁移旧格式；未知版本及非法业务字段抛出 DataValidationError。 */
 export function normalizeData(input: unknown): AppData;

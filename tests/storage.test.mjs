@@ -51,13 +51,13 @@ test('FIT 来源、缺失高程、分段和统计版本经桌面原子保存及�
   const store = new AtomicStore(path.join(dir, 'storage.json'));
   const data = fixture(); data.version = CURRENT_VERSION;
   const route = data.routes[0]; route.sourceFormat = 'FIT'; route.points[0].ele = null; route.segmentStarts = [0];
-  route.stats = calculateRouteStats(route.points, route.segmentStarts);
+  route.stats = { source: 'fit-session', distanceKm: 1.5, elevationGainM: 421, elevationLossM: null, avgSlope: null, maxSlope: 12.34, minSlope: null };
   await store.load();
   assert.equal((await store.save(data)).success, true);
   const loaded = await store.load();
   assert.deepEqual(loaded.data.routes[0], route);
   assert.equal(loaded.data.version, CURRENT_VERSION);
-  const invalid = structuredClone(data); invalid.routes[0].stats.warnings = [];
+  const invalid = structuredClone(data); invalid.routes[0].sourceFormat = 'GPX';
   assert.equal((await store.save(invalid)).success, false);
   assert.deepEqual((await store.load()).data.routes[0], route);
 });
@@ -76,7 +76,7 @@ test('迁移无版本/v2 数据并保留中文、标识符和业务值', () => {
   assert.equal(data.settings.mapboxApiKey, '');
 });
 
-test('v4 路线补齐 GPX 来源，v5 缺失或无效来源拒绝恢复', () => {
+test('v4 路线补齐 GPX 来源，新格式缺失或无效来源拒绝恢复', () => {
   const old = { ...fixture(), version: 4 };
   const migrated = normalizeData(old);
   assert.equal(migrated.routes[0].sourceFormat, 'GPX');
@@ -86,6 +86,16 @@ test('v4 路线补齐 GPX 来源，v5 缺失或无效来源拒绝恢复', () => 
   assert.throws(() => normalizeData(current), /路线来源格式/);
   current.routes[0].sourceFormat = 'TCX';
   assert.throws(() => normalizeData(current), /路线来源格式/);
+});
+
+test('旧 FIT 轨迹统计迁移后保留原值，不能仅靠文件类型推定为码表汇总', () => {
+  const old = { ...fixture(), version: 5 };
+  const route = old.routes[0]; route.sourceFormat = 'FIT'; route.segmentStarts = [0];
+  route.stats = calculateRouteStats(route.points, route.segmentStarts);
+  const migrated = normalizeData(old);
+  assert.equal(migrated.version, CURRENT_VERSION);
+  assert.deepEqual(migrated.routes[0], route);
+  assert.equal(migrated.routes[0].stats.source, undefined);
 });
 
 test('拒绝无效坐标、非有限统计、重复 ID、孤立路线和错误字段类型', () => {

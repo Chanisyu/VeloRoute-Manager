@@ -151,7 +151,7 @@ import { RouteProfileComponent } from './route-profile.component';
                  </div>
                </div>
 
-               <!-- 旧统计保留原含义；新口径的不可用值明确提示，不将 null 显示为零。 -->
+               <!-- 仅简化第四项的标题；已保存的旧 FIT 计算结果保留旧口径标记，不冒充码表汇总。 -->
                <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-700">
                   <div>
                     <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">累计爬升</div>
@@ -162,11 +162,15 @@ import { RouteProfileComponent } from './route-profile.component';
                     <div class="text-xl font-semibold" data-testid="stat-loss">{{ route.stats.elevationLossM === null ? '数据不足' : route.stats.elevationLossM + ' m' }}</div>
                   </div>
                   <div>
-                    <div class="text-slate-400 text-xs mb-1">{{ route.stats.algorithmVersion ? '平均上坡坡度' : '平均坡度（旧）' }}</div>
+                    <div class="text-slate-400 text-xs mb-1">{{ route.stats.algorithmVersion || route.stats.source ? '平均上坡坡度' : '平均坡度（旧）' }}</div>
                     <div class="text-xl font-semibold" data-testid="stat-average">{{ route.stats.avgSlope === null ? '数据不足' : route.stats.avgSlope + '%' }}</div>
                   </div>
                    <div>
-                    <div class="text-slate-400 text-xs mb-1">{{ route.stats.algorithmVersion ? '最大 100 米平均坡度' : '最大坡度（旧）' }}</div>
+                    <div class="text-slate-400 text-xs mb-1">
+                      @if (route.sourceFormat === 'FIT' && !route.stats.source) { 平均坡度（旧） }
+                      @else if (route.stats.source || route.stats.algorithmVersion) { 平均坡度 }
+                      @else { 最大坡度（旧） }
+                    </div>
                     <div class="text-xl font-semibold text-red-400" data-testid="stat-maximum">{{ route.stats.maxSlope === null ? '数据不足' : route.stats.maxSlope + '%' }}</div>
                   </div>
                </div>

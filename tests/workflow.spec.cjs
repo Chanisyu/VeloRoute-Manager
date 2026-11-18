@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const root = path.resolve(__dirname, '..');
 const sample = path.join(root, 'GPX_example', '待骑行路线', '金碧路.gpx');
-const fitName = 'MAGENE_C406_2026-11-13_151817_263140';
+const fitName = 'MAGENE_C406_2026-11-12_150459_263140';
 const fitSample = path.join(root, 'FIT_example', fitName + '.fit');
 
 /**
@@ -35,12 +35,15 @@ test('浏览器混选 GPX 和 FIT，坏文件不阻止有效路线与高程导�
   await expect(page.getByLabel('保存状态')).toContainText('损坏.FIT：所选 FIT 文件校验失败');
   await expect(page.getByText('损坏', { exact: true })).toHaveCount(0);
   await expect(page.getByText('GPX', { exact: true })).toBeVisible();
-  await expect(page.getByText(fitName, { exact: true }).locator('..')).toContainText(/57\.89km\s*·\s*307m\s*·\s*FIT/);
+  await expect(page.getByText(fitName, { exact: true }).locator('..')).toContainText(/55\.09km\s*·\s*421m\s*·\s*FIT/);
   await page.getByText('金碧路', { exact: true }).click();
   await expect(page.getByRole('heading', { name: '金碧路', exact: true })).toBeVisible();
   await expect(page.getByLabel('路线简介')).toHaveValue('从 GPX 导入');
   await page.getByText(fitName, { exact: true }).click();
   await expect(page.getByLabel('路线简介')).toHaveValue('从 FIT 导入');
+  await expect(page.getByTestId('stat-gain')).toHaveText('421 m');
+  for (const key of ['loss', 'average', 'maximum']) await expect(page.getByTestId('stat-' + key)).toHaveText('数据不足');
+  await expect(page.getByText('平均坡度', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '路线剖面图' })).toBeVisible();
   // 首次写入经过保存防抖，未生成快照时让轮询继续，确保重载发生在落盘之后。
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('velo_data') ?? 'null')?.routes.map(route => route.sourceFormat))).toEqual(['FIT', 'GPX']);
@@ -90,6 +93,8 @@ test('桌面静态构建导入 GPX 和 FIT 并在重启后恢复路线来源', a
     await openLibrary(restored);
     await expect(restored.getByText('金碧路', { exact: true })).toBeVisible();
     await expect(restored.getByText(fitName, { exact: true }).locator('..').getByText('FIT', { exact: true })).toBeVisible();
+    await restored.getByText(fitName, { exact: true }).click();
+    await expect(restored.getByTestId('stat-gain')).toHaveText('421 m');
   } finally {
     if (desktop) await desktop.close();
     // 清理前校验绝对路径及目录前缀，保证递归删除只作用于本测试创建的临时目录。

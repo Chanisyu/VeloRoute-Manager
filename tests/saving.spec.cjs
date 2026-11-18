@@ -145,7 +145,7 @@ test('桌面旧数据迁移及非法备份拒绝，当前路线与文件不变',
   await withDesktop(async ({ page, dir }) => {
     await openLibrary(page);
     const file = path.join(dir, 'storage.json');
-    await expect.poll(async () => JSON.parse(await fs.readFile(file, 'utf8')).version).toBe(5);
+    await expect.poll(async () => JSON.parse(await fs.readFile(file, 'utf8')).version).toBe(6);
     expect(JSON.parse(await fs.readFile(file + '.bak', 'utf8')).version).toBe(2);
     const before = await fs.readFile(file, 'utf8');
     page.on('dialog', dialog => dialog.accept());

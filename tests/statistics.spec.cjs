@@ -27,6 +27,7 @@ test('统计说明按需展开，路线详情移除更新操作且导入备份�
   await expect(page.getByTestId('stat-gain')).toHaveText('20 m');
   await expect(page.getByTestId('stat-average')).toHaveText('10%');
   await expect(page.getByTestId('stat-maximum')).toHaveText('10%');
+  await expect(page.getByText('平均坡度', { exact: true })).toBeVisible();
   await page.getByLabel('路线简介').fill('保留的用户简介');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('velo_data') ?? 'null')?.routes[0]?.description)).toBe('保留的用户简介');
   const original = await page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0]);
@@ -42,6 +43,7 @@ test('统计说明按需展开，路线详情移除更新操作且导入备份�
   await summary.click();
   await expect(note).toBeVisible();
   await expect(page.getByText('平均上坡坡度', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'FIT 码表汇总' })).toBeVisible();
   await summary.click();
   await expect(note).toBeHidden();
   await page.getByRole('button', { name: '返回路线管理', exact: true }).click();
@@ -52,7 +54,7 @@ test('统计说明按需展开，路线详情移除更新操作且导入备份�
   await page.getByRole('button', { name: '导出备份', exact: true }).click();
   const backup = await download;
   const bytes = await fs.readFile(await backup.path());
-  expect(JSON.parse(bytes.toString('utf8')).version).toBe(5);
+  expect(JSON.parse(bytes.toString('utf8')).version).toBe(6);
   await page.locator('input[accept=".json"]').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: bytes });
   await expect(page.getByLabel('保存状态')).toContainText('备份已恢复并保存');
   await page.reload();

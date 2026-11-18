@@ -1,4 +1,4 @@
-export const CURRENT_VERSION = 5;
+export const CURRENT_VERSION = 6;
 // 校验提示使用界面上的中文字段名称，JSON 键名保留英文。
 const FIELD_LABELS = {
   "id": "标识符",
@@ -89,7 +89,7 @@ function color(value, fallback) {
 }
 
 /**
- * 将历史存储、备份或 IPC 输入规范化为 v5；保留旧统计，不在迁移时重新计算。
+ * 将历史存储、备份或 IPC 输入规范化为 v6；保留旧统计，不在迁移时重新计算。
  * 旧数据缺少的界面字段使用兼容默认值；业务坐标、统计与关联错误不得静默修复。
  * @param {unknown} input 待读取或保存的数据，不信任其 TypeScript 类型。
  * @returns {import('./storage-schema.mjs').AppData} 可安全持久化的快照。
@@ -137,15 +137,23 @@ export function normalizeData(input) {
     }
     requireValid(isRecord(route.stats), 'route.stats');
     const currentStats = route.stats.algorithmVersion !== undefined;
+    const deviceStats = route.stats.source !== undefined;
     if (currentStats) requireValid(version >= 4 && route.stats.algorithmVersion === 1 && segmentStarts !== undefined, '统计算法版本或分段信息');
+    // 码表汇总与轨迹高程是否齐全无关，需独立校验，避免误用 GPX 算法的缺失规则。
+    if (deviceStats) requireValid(version >= 6 && sourceFormat === 'FIT' && route.stats.source === 'fit-session'
+      && !currentStats && route.stats.warnings === undefined && segmentStarts !== undefined, 'FIT 统计来源或分段信息');
     const stats = {};
     for (const field of ['distanceKm', 'elevationGainM', 'elevationLossM', 'avgSlope', 'maxSlope', 'minSlope']) {
       const value = route.stats[field] === undefined && field === 'minSlope' && version < 3 ? 0 : route.stats[field];
-      stats[field] = currentStats && field !== 'distanceKm' && value === null ? null : finite(value, `stats.${field}`);
+      stats[field] = (currentStats || deviceStats) && field !== 'distanceKm' && value === null ? null : finite(value, `stats.${field}`);
     }
     requireValid(stats.distanceKm >= 0 && (stats.elevationGainM === null || stats.elevationGainM >= 0)
       && (stats.elevationLossM === null || stats.elevationLossM >= 0), '距离与累计升降不能为负');
-    if (currentStats) {
+    if (deviceStats) {
+      requireValid((stats.avgSlope === null || stats.avgSlope >= 0) && (stats.maxSlope === null || stats.maxSlope >= 0)
+        && stats.minSlope === null, 'FIT 坡度统计范围');
+      stats.source = 'fit-session';
+    } else if (currentStats) {
       const warnings = route.stats.warnings;
       const allowed = ['missing-elevation', 'sparse-sampling', 'duplicate-position'];
       requireValid(Array.isArray(warnings) && Array.from(warnings).every(value => allowed.includes(value)) && new Set(warnings).size === warnings.length, '统计质量提示');
