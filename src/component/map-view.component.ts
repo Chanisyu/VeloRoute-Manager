@@ -241,7 +241,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
   private highlightedId?: string;
   private readonly routeInteractionCleanups = new Map<string, () => void>();
   
-  // Track loaded layers to avoid redundant adds/removes
+  // 按实际添加顺序记录路线，用于恢复悬停前的叠放顺序。
   private renderedRouteIds = new Set<string>();
   
   currentLayer = 'mapbox_outdoors';
@@ -561,8 +561,10 @@ export class MapViewComponent implements OnInit, OnDestroy {
           const isTracked = this.renderedRouteIds.has(route.id);
 
           if (!isTracked || !layerExists) {
-              this.removeRouteFromMap(route.id); 
+              this.removeRouteFromMap(route.id);
               this.addRouteToMap(route, color);
+              // 重建的图层重新追加到末尾，旧记录也要移到添加顺序的末尾。
+              this.renderedRouteIds.delete(route.id);
               this.renderedRouteIds.add(route.id);
           } else {
               this.map.setPaintProperty(layerId, 'line-color', color);
@@ -675,7 +677,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
       this.popup.remove();
   }
 
-  /** @returns 无返回值；优先应用列表悬停，恢复上一条路线的普通样式。 */
+  /** @returns 无返回值；优先应用列表悬停，恢复上一条路线的普通样式与层级。 */
   private syncRouteHighlight(): void {
       const next = this.listHoverId ?? this.mapHoverId;
       if (this.highlightedId !== undefined && this.highlightedId !== next) {
@@ -685,12 +687,30 @@ export class MapViewComponent implements OnInit, OnDestroy {
       if (next !== undefined) this.paintRouteHighlight(next, true);
   }
 
-  /** @param id 路线标识符。 @param active 是否强调。 @returns 无返回值；只调整已经绘制的可见图层。 */
+  /** @param id 路线标识符。 @param active 是否高亮。 @returns 无返回值；可见线层在高亮时临时置顶，透明命中层位置不变。 */
   private paintRouteHighlight(id: string, active: boolean): void {
       const layer = `route-layer-${id}`;
       if (!this.map?.getLayer(layer)) return;
       this.map.setPaintProperty(layer, 'line-width', active ? 7 : ROUTE_LINE_WIDTH);
       this.map.setPaintProperty(layer, 'line-opacity', active ? 1 : ROUTE_LINE_OPACITY);
+      this.map.moveLayer(layer, active ? undefined : this.nextRouteHitLayer(id));
+  }
+
+  /**
+   * 还原线层时插到下一条路线的命中层之前，使两条路线恢复原相对位置。
+   * @param id 即将结束高亮的路线标识符。
+   * @returns 下一条仍有图层的路线命中层 ID，末尾返回 undefined。
+   */
+  private nextRouteHitLayer(id: string): string | undefined {
+      let afterRoute = false;
+      for (const routeId of this.renderedRouteIds) {
+          if (afterRoute) {
+              const hitLayer = `route-hit-${routeId}`;
+              if (this.map.getLayer(hitLayer)) return hitLayer;
+          }
+          if (routeId === id) afterRoute = true;
+      }
+      return undefined;
   }
 
   /** @param id 鼠标所在路线，离开时省略。 @returns 无返回值；列表悬停仅触发图层高亮。 */

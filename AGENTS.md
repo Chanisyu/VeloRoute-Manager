@@ -23,7 +23,7 @@
 | `src/component/route-profile.component.ts`、`shared/route-profile.mjs` | 路线详情的交互剖面、原始高程插值及临时视窗；像素抽稀只影响绘制，悬停读取完整数据。 |
 | `shared/storage-schema.mjs`、`storage/store.mjs` | 跨进程数据校验/迁移与桌面原子存储；类型声明为相邻 `.d.mts`。 |
 | `src/component/storage-status.component.ts` | 保存反馈、失败重试及读取失败后的安全恢复入口。 |
-| `src/component/map-view.component.ts` | 底图、地形、路线图层、文件夹对比。列表悬停只高亮可见图层，右键和地图线条点击共用详情入口。 |
+| `src/component/map-view.component.ts` | 底图、地形、路线图层、文件夹对比。悬停时临时置顶可见的高亮路线，结束后恢复图层添加顺序。右键列表和点击地图线条共用详情入口。 |
 | `src/component/management-view.component.ts`、`settings-view.component.ts` | 文件夹与路线编辑、GPX/备份导入、Mapbox 设置；组件使用内联模板。 |
 | `main.js`、`preload.js` | 窗口、文件持久化、`save-data/load-data` IPC；桥接为 `window.electronAPI.saveData/loadData`。 |
 | `GPX_example/`、`FIT_example/`、`Docs/` | 前两者含 GPX 和码表 FIT 样例；`Docs/` 中的历史提示词与功能设想不代表已实现或已授权需求。 |
