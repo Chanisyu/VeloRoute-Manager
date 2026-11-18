@@ -86,22 +86,20 @@ const MAPBOX_ZH_CN = {
         
         @for (folder of service.folders(); track folder.id) {
           <div class="mb-2 border-b border-slate-100 last:border-0 pb-2">
-            <div class="flex items-center justify-between mb-1 group">
-               <div class="flex items-center gap-1">
-                   <button (click)="service.toggleFolderExpansion(folder.id)" class="text-slate-400 hover:text-slate-600 focus:outline-none p-1 rounded hover:bg-slate-100">
-                       <svg class="w-3 h-3 transition-transform duration-200" [class.rotate-90]="folder.isExpanded" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                   </button>
-                   
-                   <svg class="w-4 h-4 text-slate-500" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
-                   <span class="font-semibold text-xs text-slate-700 select-none cursor-pointer" (click)="service.toggleFolderExpansion(folder.id)">{{ folder.name }}</span>
-               </div>
-
-               <!-- Check All -->
-                <input type="checkbox" 
-                    [checked]="isFolderFullyVisible(folder.id)" 
-                    (change)="toggleFolderVisibility(folder.id, $event)"
-                    class="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3 h-3 cursor-pointer mr-1"
-                    title="显示或隐藏该文件夹的全部路线">
+            <!-- 箭头列与路线列表的缩进同宽。复选框再内移一格，与下方路线行对齐。 -->
+            <div class="grid grid-cols-[1.5rem_minmax(0,1fr)] items-center mb-1">
+              <button (click)="service.toggleFolderExpansion(folder.id)" class="justify-self-start text-slate-400 hover:text-slate-600 focus:outline-none p-1 rounded hover:bg-slate-100">
+                <svg class="w-3 h-3 transition-transform duration-200" [class.rotate-90]="folder.isExpanded" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+              </button>
+              <div class="flex min-w-0 items-center gap-2 px-1">
+                <input type="checkbox"
+                  [checked]="isFolderFullyVisible(folder.id)"
+                  (change)="toggleFolderVisibility(folder.id, $event)"
+                  class="h-3 w-3 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  title="显示或隐藏该文件夹的全部路线">
+                <svg class="w-4 h-4 shrink-0 text-slate-500" fill="currentColor" viewBox="0 0 20 20"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z"/></svg>
+                <span class="truncate font-semibold text-xs text-slate-700 select-none cursor-pointer" (click)="service.toggleFolderExpansion(folder.id)">{{ folder.name }}</span>
+              </div>
             </div>
             
             @if (folder.isExpanded) {
@@ -112,7 +110,7 @@ const MAPBOX_ZH_CN = {
                       <input type="checkbox" 
                         [checked]="route.isVisible" 
                         (change)="toggleRoute(route.id, $event)"
-                        class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                        class="h-3 w-3 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                         
                       <span class="w-2 h-2 rounded-full shadow-sm ring-1 ring-black/10" 
                             [style.backgroundColor]="service.appSettings().isComparisonMode ? (folder.color || '#999') : route.color">
