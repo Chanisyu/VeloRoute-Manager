@@ -42,7 +42,7 @@ test('浏览器混选 GPX 和 FIT，坏文件不阻止有效路线与高程导�
   await page.getByText(fitName, { exact: true }).click();
   await expect(page.getByLabel('路线简介')).toHaveValue('从 FIT 导入');
   await expect(page.getByTestId('stat-gain')).toHaveText('421 m');
-  for (const key of ['loss', 'average', 'maximum']) await expect(page.getByTestId('stat-' + key)).toHaveText('数据不足');
+  for (const key of ['loss', 'average', 'maximum']) await expect(page.getByTestId('stat-' + key)).toHaveText('-');
   await expect(page.getByText('最大坡度', { exact: true })).toBeVisible();
   await expect(page.getByRole('region', { name: '路线剖面图' })).toBeVisible();
   // 首次写入经过保存防抖，未生成快照时让轮询继续，确保重载发生在落盘之后。

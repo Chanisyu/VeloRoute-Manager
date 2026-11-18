@@ -68,11 +68,12 @@ test('统计说明按需展开，路线详情移除更新操作且导入备份�
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem('velo_data')).routes[0])).toEqual(updated);
 });
 
-test('缺高程显示数据不足，旧统计不静默重算或冒用新口径名称', async ({ page }) => {
+test('缺高程显示短横线，旧统计保留原值和旧口径名称', async ({ page }) => {
   await open(page);
   await page.locator('input[accept=".gpx,.fit"]').first().setInputFiles(file(gpx(1, true)));
+  await expect(page.getByText('统计验证', { exact: true }).locator('..').getByText('-', { exact: true })).toBeVisible();
   await page.getByText('统计验证', { exact: true }).click();
-  for (const key of ['gain', 'loss', 'average', 'maximum']) await expect(page.getByTestId('stat-' + key)).toHaveText('数据不足');
+  for (const key of ['gain', 'loss', 'average', 'maximum']) await expect(page.getByTestId('stat-' + key)).toHaveText('-');
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('velo_data') ?? 'null')?.routes[0]?.points[5]?.ele)).toBeNull();
   await page.evaluate(() => {
     const data = JSON.parse(localStorage.getItem('velo_data'));

@@ -100,7 +100,7 @@ import { RouteProfileComponent } from './route-profile.component';
                         <div class="text-xs opacity-80 flex gap-2 mt-0.5">
                             <span>{{ route.stats.distanceKm }}km</span>
                             <span>·</span>
-                            <span>{{ route.stats.elevationGainM === null ? '爬升未知' : route.stats.elevationGainM + 'm' }}</span>
+                            <span>{{ route.stats.elevationGainM === null ? '-' : route.stats.elevationGainM + 'm' }}</span>
                             <span>·</span>
                             <span>{{ route.sourceFormat }}</span>
                         </div>
@@ -152,22 +152,23 @@ import { RouteProfileComponent } from './route-profile.component';
                </div>
 
                <!-- 仅简化第四项的标题；已保存的旧 FIT 计算结果保留旧口径标记，不冒充码表汇总。 -->
+               <!-- 缺项用无单位的短横线，真实零值保留数值和单位。 -->
                <div class="grid grid-cols-2 xl:grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-700">
                   <div>
                     <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">累计爬升</div>
-                    <div class="text-xl font-semibold" data-testid="stat-gain">{{ route.stats.elevationGainM === null ? '数据不足' : route.stats.elevationGainM + ' m' }}</div>
+                    <div class="text-xl font-semibold" [class.text-slate-400]="route.stats.elevationGainM === null" data-testid="stat-gain">{{ route.stats.elevationGainM === null ? '-' : route.stats.elevationGainM + ' m' }}</div>
                   </div>
                   <div>
                     <div class="text-slate-400 text-xs uppercase tracking-wider mb-1">累计下降</div>
-                    <div class="text-xl font-semibold" data-testid="stat-loss">{{ route.stats.elevationLossM === null ? '数据不足' : route.stats.elevationLossM + ' m' }}</div>
+                    <div class="text-xl font-semibold" [class.text-slate-400]="route.stats.elevationLossM === null" data-testid="stat-loss">{{ route.stats.elevationLossM === null ? '-' : route.stats.elevationLossM + ' m' }}</div>
                   </div>
                   <div>
                     <div class="text-slate-400 text-xs mb-1">{{ route.stats.algorithmVersion || route.stats.source ? '平均上坡坡度' : '平均坡度（旧）' }}</div>
-                    <div class="text-xl font-semibold" data-testid="stat-average">{{ route.stats.avgSlope === null ? '数据不足' : route.stats.avgSlope + '%' }}</div>
+                    <div class="text-xl font-semibold" [class.text-slate-400]="route.stats.avgSlope === null" data-testid="stat-average">{{ route.stats.avgSlope === null ? '-' : route.stats.avgSlope + '%' }}</div>
                   </div>
                    <div>
                     <div class="text-slate-400 text-xs mb-1">最大坡度{{ !route.stats.source && (route.sourceFormat === 'FIT' || !route.stats.algorithmVersion) ? '（旧）' : '' }}</div>
-                    <div class="text-xl font-semibold text-red-400" data-testid="stat-maximum">{{ route.stats.maxSlope === null ? '数据不足' : route.stats.maxSlope + '%' }}</div>
+                    <div class="text-xl font-semibold" [class.text-slate-400]="route.stats.maxSlope === null" [class.text-red-400]="route.stats.maxSlope !== null" data-testid="stat-maximum">{{ route.stats.maxSlope === null ? '-' : route.stats.maxSlope + '%' }}</div>
                   </div>
                </div>
             </div>
