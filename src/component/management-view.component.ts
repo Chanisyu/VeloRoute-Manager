@@ -2,11 +2,12 @@
 import { Component, inject, signal, computed, output, input, OnInit } from '@angular/core';
 import { RouteService, RouteData, Folder } from '../services/route.service';
 import { FormsModule } from '@angular/forms';
+import { RouteProfileComponent } from './route-profile.component';
 
 @Component({
   selector: 'app-management-view',
   standalone: true,
-  imports: [FormsModule],
+  imports: [FormsModule, RouteProfileComponent],
   host: { 'class': 'block w-full h-full' },
   template: `
     <div class="flex h-full w-full bg-white text-slate-800">
@@ -167,6 +168,9 @@ import { FormsModule } from '@angular/forms';
                   </div>
                </div>
             </div>
+
+            <!-- 剖面独立接收原始点及分段；编辑名称或简介不影响图表视窗。 -->
+            <app-route-profile class="px-8 pt-6" [points]="route.points" [segmentStarts]="route.segmentStarts" [routeId]="route.id" />
 
             <!-- Edit Form -->
             <div class="p-8 max-w-3xl mx-auto">

@@ -19,6 +19,7 @@
 | `src/app.component.ts` | 通过 Signal 切换地图、管理、设置视图；未接入 Angular Router。 |
 | `src/services/route.service.ts` | 共享状态、GPX 解析与导入、统计调用、自动保存、备份和 Token 验证。 |
 | `shared/route-statistics.mjs` | 纯函数统计引擎及口径版本；细节和验证依据见 [STATISTICS.md](STATISTICS.md)。 |
+| `src/component/route-profile.component.ts`、`shared/route-profile.mjs` | 路线详情的交互剖面、原始高程插值及临时视窗；像素抽稀只影响绘制，悬停读取完整数据。 |
 | `shared/storage-schema.mjs`、`storage/store.mjs` | 跨进程数据校验/迁移与桌面原子存储；类型声明为相邻 `.d.mts`。 |
 | `src/component/storage-status.component.ts` | 保存反馈、失败重试及读取失败后的安全恢复入口。 |
 | `src/component/map-view.component.ts` | 底图、地形、路线图层、悬浮/点击交互、文件夹对比；每条路线有独立 GeoJSON source、显示层和命中层。 |
@@ -32,6 +33,7 @@
 - `RouteData` 保存 UUID、所属 `folderId`、名称/描述、`points`、`segmentStarts`、`stats`、颜色及显隐。点为 `{lat, lon, ele}`，高程缺失为 null；GeoJSON 使用 `[lon, lat]`，已知分段绘制为 MultiLineString。删除文件夹会连同路线删除。
 - GPX 保留原始点序及 trkseg 边界，不保留 XML、时间或扩展字段，不支持 rtept/wpt。统计 v1 按20m RDP关键轮廓及±100m趋势残差平滑累计升降；均值为距离加权上坡坡度，最大坡度为完整100m窗口。跨分段/长缺口不求最大坡度，无50%硬截断；数据不足用null。原始点不被滤波覆盖。
 - 历史统计不自动重算或套用新名称；新口径通过重新导入原始GPX生成新路线。路线详情不提供重算/覆盖更新入口；计算及采样说明集中在设置页默认折叠的“路线统计与计算说明”栏目。
+- 剖面按原始高程绘制并保留分段，缺高程处断开且不显示提示。悬停20m坡度使用同一有效区间内前后各10m的插值高差；不足完整窗口省略该字段，不沿用顶部100m最大坡度的间距筛选规则。缩放/拖动不保存、不改原始数据。
 - 桌面为 `storage.json`（v4，保留 folders/routes/settings）；`.bak` 为上一版有效数据。未打包运行仍使用独立开发目录。主进程排队异步写入、同步临时文件后替换；读取损坏时禁止默认数据覆盖。恢复原文保存在 `.preserved-*.json`，详情见 [STORAGE.md](STORAGE.md)。
 - 导出备份为 v4（含时间戳与 Mapbox Token），兼容无版本/v1/v2/v3；统一校验后先落盘再替换界面。浏览器使用 `velo_data/velo_data_backup`，只在缺少新键时迁移旧三键；桌面不再维护浏览器数据镜像。
 - 保存防抖 400ms；正常关闭等待待保存快照、导入、恢复及在途写入，失败返回应用。不要绕过校验直接设置加载结果，也不要把读取失败当作首次启动。主进程以单实例锁保护同一数据目录。
