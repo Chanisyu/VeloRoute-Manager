@@ -4,6 +4,14 @@ import { RouteService, RouteData } from '../services/route.service';
 import { FormsModule } from '@angular/forms';
 
 declare const mapboxgl: any;
+const ROUTE_LINE_WIDTH = 4;
+const ROUTE_LINE_OPACITY = 0.85;
+
+/** 地图命中事件中供路线悬浮使用的坐标与属性。 */
+interface RouteMapHoverEvent {
+  lngLat: { lng: number; lat: number };
+  features?: Array<{ properties?: { description?: unknown } }>;
+}
 
 /** Mapbox 3.9.4 内置控件的中文文案；仅覆盖显示文本，不修改地图事件和地理数据。 */
 const MAPBOX_ZH_CN = {
@@ -106,7 +114,9 @@ const MAPBOX_ZH_CN = {
                 <div class="pl-6 space-y-1 mt-1 transition-all duration-300">
                   @for (route of getRoutesInFolder(folder.id); track route.id) {
                     <!-- 路线行用于切换可见性，禁用文本选中以免双击时出现文字高亮。 -->
-                    <label class="flex items-center gap-2 cursor-pointer select-none hover:bg-slate-100 p-1 rounded transition-colors text-xs group/item">
+                    <label class="flex items-center gap-2 cursor-pointer select-none hover:bg-slate-100 p-1 rounded transition-colors text-xs group/item"
+                           (mouseenter)="setListHover(route.id)" (mouseleave)="setListHover()"
+                           (contextmenu)="openRouteDetails($event, route.id)">
                       <input type="checkbox" 
                         [checked]="route.isVisible" 
                         (change)="toggleRoute(route.id, $event)"
@@ -225,6 +235,11 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
   private map: any = null;
   private popup: any = null;
+  private mapInitFrame?: number;
+  private listHoverId?: string;
+  private mapHoverId?: string;
+  private highlightedId?: string;
+  private readonly routeInteractionCleanups = new Map<string, () => void>();
   
   // Track loaded layers to avoid redundant adds/removes
   private renderedRouteIds = new Set<string>();
@@ -300,7 +315,9 @@ export class MapViewComponent implements OnInit, OnDestroy {
     }
   }
 
-  ngOnDestroy() {
+  /** @returns 无返回值；切换页时保存视角，释放地图并取消未执行的初始化。 */
+  ngOnDestroy(): void {
+    if (this.mapInitFrame !== undefined) cancelAnimationFrame(this.mapInitFrame);
     // Save map state before destroying
     if (this.map) {
         const center = this.map.getCenter();
@@ -316,6 +333,8 @@ export class MapViewComponent implements OnInit, OnDestroy {
         });
         
         this.map.remove();
+        this.map = null;
+        this.routeInteractionCleanups.clear();
     }
     
     if (this.resizeObserver) {
@@ -328,10 +347,11 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
   /** @param {string} apiKey 已通过校验的访问令牌。 @returns {void} 创建使用中文控件的地图，保留原有底图与视角逻辑。 */
   private initMap(apiKey: string) {
-    if (this.map) return;
+    if (this.map || this.mapInitFrame !== undefined) return;
 
     // Use requestAnimationFrame to ensuring the container has calculated dimensions
-    requestAnimationFrame(() => {
+    this.mapInitFrame = requestAnimationFrame(() => {
+        this.mapInitFrame = undefined;
         if (this.map || !this.mapContainer?.nativeElement) return;
 
         mapboxgl.accessToken = apiKey;
@@ -408,6 +428,10 @@ export class MapViewComponent implements OnInit, OnDestroy {
                 this.updateTerrain(); 
             } catch (e) { /* Terrain might fail */ }
 
+            // 切换样式会重建图层和命中监听，列表上仍有效的悬停会在重建后应用。
+            this.clearMapHover();
+            for (const cleanup of this.routeInteractionCleanups.values()) cleanup();
+            this.routeInteractionCleanups.clear();
             this.renderedRouteIds.clear();
             
             setTimeout(() => {
@@ -509,6 +533,12 @@ export class MapViewComponent implements OnInit, OnDestroy {
   private updateMapData(routes: RouteData[], isCompMode: boolean) {
       if (!this.map || !this.map.getStyle()) return;
 
+      const folders = this.service.folders();
+      const hoveredRoute = routes.find(route => route.id === this.listHoverId);
+      // 路线行被移除或收起时，浏览器可能不会发出 mouseleave。
+      if (!hoveredRoute || !folders.some(folder => folder.id === hoveredRoute.folderId && folder.isExpanded)) {
+          this.listHoverId = undefined;
+      }
       const visibleRoutes = routes.filter(r => r.isVisible);
       const visibleIds = new Set(visibleRoutes.map(r => r.id));
 
@@ -522,7 +552,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
       visibleRoutes.forEach(route => {
           let color = route.color;
           if (isCompMode) {
-            const folder = this.service.folders().find(f => f.id === route.folderId);
+            const folder = folders.find(f => f.id === route.folderId);
             if (folder && folder.color) color = folder.color;
           }
 
@@ -538,6 +568,8 @@ export class MapViewComponent implements OnInit, OnDestroy {
               this.map.setPaintProperty(layerId, 'line-color', color);
           }
       });
+      // 可见性变化或样式重载后，仍在列表中的悬停可以应用到新建立的图层。
+      this.syncRouteHighlight();
   }
 
   /**
@@ -581,7 +613,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
             this.map.addLayer({
                 id: visLayerId, type: 'line', source: sourceId,
                 layout: { 'line-join': 'round', 'line-cap': 'round' },
-                paint: { 'line-color': color, 'line-width': 4, 'line-opacity': 0.85 }
+                paint: { 'line-color': color, 'line-width': ROUTE_LINE_WIDTH, 'line-opacity': ROUTE_LINE_OPACITY }
             });
         }
 
@@ -591,41 +623,87 @@ export class MapViewComponent implements OnInit, OnDestroy {
       }
   }
 
-  private removeRouteFromMap(id: string) {
+  /** @param id 即将隐藏或重建的路线。 @returns 无返回值；清理图层、命中监听及沿线提示。 */
+  private removeRouteFromMap(id: string): void {
+      this.routeInteractionCleanups.get(id)?.();
+      this.routeInteractionCleanups.delete(id);
+      if (this.mapHoverId === id) this.clearMapHover();
       if (this.map.getLayer(`route-layer-${id}`)) this.map.removeLayer(`route-layer-${id}`);
       if (this.map.getLayer(`route-hit-${id}`)) this.map.removeLayer(`route-hit-${id}`); 
       if (this.map.getSource(`route-source-${id}`)) this.map.removeSource(`route-source-${id}`);
   }
 
-  private setupInteractions(id: string) {
+  /** @param id 可见路线的标识符。 @returns 无返回值；为命中层绑定悬浮提示与详情入口。 */
+  private setupInteractions(id: string): void {
       const hitLayer = `route-hit-${id}`;
-      const visLayer = `route-layer-${id}`;
 
-      this.map.off('mouseenter', hitLayer);
-      this.map.off('mouseleave', hitLayer);
-      this.map.off('click', hitLayer);
-
-      this.map.on('mouseenter', hitLayer, (e: any) => {
+      /** @param event 地图命中事件。 @returns 无返回值；显示当前命中路线的高亮和浮窗。 */
+      const enter = (event: RouteMapHoverEvent): void => {
+          const description = event.features?.[0]?.properties?.description;
+          if (typeof description !== 'string') return;
+          this.mapHoverId = id;
           this.map.getCanvas().style.cursor = 'pointer';
-          if (this.map.getLayer(visLayer)) {
-             this.map.setPaintProperty(visLayer, 'line-width', 7);
-          }
-          const description = e.features[0].properties.description;
-          this.popup.setLngLat(e.lngLat).setHTML(description).addTo(this.map);
-      });
+          this.syncRouteHighlight();
+          this.popup.setLngLat(event.lngLat).setHTML(description).addTo(this.map);
+      };
 
-      this.map.on('mouseleave', hitLayer, () => {
-          this.map.getCanvas().style.cursor = '';
-          if (this.map.getLayer(visLayer)) {
-             this.map.setPaintProperty(visLayer, 'line-width', 4);
-          }
-          this.popup.remove();
-      });
+      /** @returns 无返回值；重叠路线的离开事件不能清除另一条路线的提示。 */
+      const leave = (): void => {
+          if (this.mapHoverId !== id) return;
+          this.clearMapHover();
+          this.syncRouteHighlight();
+      };
 
-      this.map.on('click', hitLayer, (e: any) => {
-          const routeId = e.features[0].properties.id;
-          this.zone.run(() => this.onRouteSelect.emit(routeId));
+      /** @returns 无返回值；通知根组件打开该路线详情。 */
+      const select = (): void => this.zone.run(() => this.onRouteSelect.emit(id));
+      this.map.on('mouseenter', hitLayer, enter);
+      this.map.on('mouseleave', hitLayer, leave);
+      this.map.on('click', hitLayer, select);
+      // 使用原回调引用解绑，避免重建图层后同一命中事件被多次处理。
+      this.routeInteractionCleanups.set(id, () => {
+          this.map.off('mouseenter', hitLayer, enter);
+          this.map.off('mouseleave', hitLayer, leave);
+          this.map.off('click', hitLayer, select);
       });
+  }
+
+  /** @returns 无返回值；移到列表或移除命中层时收起沿线浮窗。 */
+  private clearMapHover(): void {
+      if (this.mapHoverId === undefined) return;
+      this.mapHoverId = undefined;
+      this.map.getCanvas().style.cursor = '';
+      this.popup.remove();
+  }
+
+  /** @returns 无返回值；优先应用列表悬停，恢复上一条路线的普通样式。 */
+  private syncRouteHighlight(): void {
+      const next = this.listHoverId ?? this.mapHoverId;
+      if (this.highlightedId !== undefined && this.highlightedId !== next) {
+          this.paintRouteHighlight(this.highlightedId, false);
+      }
+      this.highlightedId = next;
+      if (next !== undefined) this.paintRouteHighlight(next, true);
+  }
+
+  /** @param id 路线标识符。 @param active 是否强调。 @returns 无返回值；只调整已经绘制的可见图层。 */
+  private paintRouteHighlight(id: string, active: boolean): void {
+      const layer = `route-layer-${id}`;
+      if (!this.map?.getLayer(layer)) return;
+      this.map.setPaintProperty(layer, 'line-width', active ? 7 : ROUTE_LINE_WIDTH);
+      this.map.setPaintProperty(layer, 'line-opacity', active ? 1 : ROUTE_LINE_OPACITY);
+  }
+
+  /** @param id 鼠标所在路线，离开时省略。 @returns 无返回值；列表悬停仅触发图层高亮。 */
+  setListHover(id?: string): void {
+      if (id !== undefined) this.clearMapHover();
+      this.listHoverId = id;
+      this.syncRouteHighlight();
+  }
+
+  /** @param event 路线行右键事件。 @param id 列表路线的标识符。 @returns 无返回值；隐藏路线也可打开详情。 */
+  openRouteDetails(event: MouseEvent, id: string): void {
+      event.preventDefault();
+      this.onRouteSelect.emit(id);
   }
 
   // --- UI Interactions ---
