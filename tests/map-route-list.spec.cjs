@@ -58,11 +58,13 @@ function overlapOrder(page) {
   });
 }
 
-test('地图和列表悬停临时置顶可见路线，移开后还原，右键可打开隐藏路线详情', async ({ page }) => {
+test('地图与列表双向高亮，悬停置顶，右键可打开隐藏路线详情', async ({ page }) => {
   await openMap(page);
-  const first = page.getByText('可见路线甲', { exact: true });
-  const second = page.getByText('可见路线乙', { exact: true });
-  const hidden = page.getByText('隐藏路线', { exact: true });
+  // 地图浮窗也会显示路线名称，这些定位只指向列表行。
+  const routeList = page.getByRole('heading', { name: /^路线图层/ }).locator('..');
+  const first = routeList.getByText('可见路线甲', { exact: true });
+  const second = routeList.getByText('可见路线乙', { exact: true });
+  const hidden = routeList.getByText('隐藏路线', { exact: true });
   await expect.poll(() => overlapOrder(page)).toEqual(['second', 'first']);
   await expect.poll(() => paint(page, 'first')).toEqual([4, 0.85]);
   // 等待命中层真正绘制，核对从地图浮窗进入列表时的交接。
@@ -77,9 +79,16 @@ test('地图和列表悬停临时置顶可见路线，移开后还原，右键�
   const { x, y } = await hitPoint.jsonValue();
   await page.mouse.move(x, y);
   await expect(page.locator('.route-popup')).toBeVisible();
+  await expect(first.locator('..')).toHaveCSS('background-color', 'rgb(241, 245, 249)');
+  await expect(first).toHaveCSS('color', 'rgb(15, 23, 42)');
+  await expect(second.locator('..')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
   await expect.poll(() => paint(page, 'first')).toEqual([7, 1]);
   await expect.poll(() => overlapOrder(page)).toEqual(['first', 'second']);
   await second.hover();
+  await expect(first.locator('..')).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
+  await expect(first).toHaveCSS('color', 'rgb(71, 85, 105)');
+  await expect(second.locator('..')).toHaveCSS('background-color', 'rgb(241, 245, 249)');
+  await expect(second).toHaveCSS('color', 'rgb(15, 23, 42)');
   await expect.poll(() => paint(page, 'first')).toEqual([4, 0.85]);
   await expect.poll(() => paint(page, 'second')).toEqual([7, 1]);
   await expect(page.locator('.route-popup')).toHaveCount(0);

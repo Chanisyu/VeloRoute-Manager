@@ -1,5 +1,5 @@
 
-import { Component, ElementRef, OnInit, ViewChild, OnDestroy, inject, effect, output, signal, NgZone } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, OnDestroy, inject, effect, output, signal, untracked, NgZone } from '@angular/core';
 import { RouteService, RouteData } from '../services/route.service';
 import { FormsModule } from '@angular/forms';
 
@@ -115,6 +115,7 @@ const MAPBOX_ZH_CN = {
                   @for (route of getRoutesInFolder(folder.id); track route.id) {
                     <!-- 路线行用于切换可见性，禁用文本选中以免双击时出现文字高亮。 -->
                     <label class="flex items-center gap-2 cursor-pointer select-none hover:bg-slate-100 p-1 rounded transition-colors text-xs group/item"
+                           [class.bg-slate-100]="mapHoverId() === route.id"
                            (mouseenter)="setListHover(route.id)" (mouseleave)="setListHover()"
                            (contextmenu)="openRouteDetails($event, route.id)">
                       <input type="checkbox" 
@@ -126,7 +127,9 @@ const MAPBOX_ZH_CN = {
                             [style.backgroundColor]="service.appSettings().isComparisonMode ? (folder.color || '#999') : route.color">
                       </span>
                       
-                      <span class="truncate text-slate-600 group-hover/item:text-slate-900">{{ route.name }}</span>
+                      <span class="truncate group-hover/item:text-slate-900"
+                            [class.text-slate-600]="mapHoverId() !== route.id"
+                            [class.text-slate-900]="mapHoverId() === route.id">{{ route.name }}</span>
                     </label>
                   }
                 </div>
@@ -237,7 +240,8 @@ export class MapViewComponent implements OnInit, OnDestroy {
   private popup: any = null;
   private mapInitFrame?: number;
   private listHoverId?: string;
-  private mapHoverId?: string;
+  // 列表订阅地图悬停以复用普通悬停样式；图层维护逻辑用 untracked 读取，避免悬停触发全量同步。
+  protected readonly mapHoverId = signal<string | undefined>(undefined);
   private highlightedId?: string;
   private readonly routeInteractionCleanups = new Map<string, () => void>();
   
@@ -629,7 +633,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
   private removeRouteFromMap(id: string): void {
       this.routeInteractionCleanups.get(id)?.();
       this.routeInteractionCleanups.delete(id);
-      if (this.mapHoverId === id) this.clearMapHover();
+      if (untracked(this.mapHoverId) === id) this.clearMapHover();
       if (this.map.getLayer(`route-layer-${id}`)) this.map.removeLayer(`route-layer-${id}`);
       if (this.map.getLayer(`route-hit-${id}`)) this.map.removeLayer(`route-hit-${id}`); 
       if (this.map.getSource(`route-source-${id}`)) this.map.removeSource(`route-source-${id}`);
@@ -643,7 +647,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
       const enter = (event: RouteMapHoverEvent): void => {
           const description = event.features?.[0]?.properties?.description;
           if (typeof description !== 'string') return;
-          this.mapHoverId = id;
+          this.mapHoverId.set(id);
           this.map.getCanvas().style.cursor = 'pointer';
           this.syncRouteHighlight();
           this.popup.setLngLat(event.lngLat).setHTML(description).addTo(this.map);
@@ -651,7 +655,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
       /** @returns 无返回值；重叠路线的离开事件不能清除另一条路线的提示。 */
       const leave = (): void => {
-          if (this.mapHoverId !== id) return;
+          if (this.mapHoverId() !== id) return;
           this.clearMapHover();
           this.syncRouteHighlight();
       };
@@ -671,15 +675,15 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
   /** @returns 无返回值；移到列表或移除命中层时收起沿线浮窗。 */
   private clearMapHover(): void {
-      if (this.mapHoverId === undefined) return;
-      this.mapHoverId = undefined;
+      if (untracked(this.mapHoverId) === undefined) return;
+      this.mapHoverId.set(undefined);
       this.map.getCanvas().style.cursor = '';
       this.popup.remove();
   }
 
   /** @returns 无返回值；优先应用列表悬停，恢复上一条路线的普通样式与层级。 */
   private syncRouteHighlight(): void {
-      const next = this.listHoverId ?? this.mapHoverId;
+      const next = this.listHoverId ?? untracked(this.mapHoverId);
       if (this.highlightedId !== undefined && this.highlightedId !== next) {
           this.paintRouteHighlight(this.highlightedId, false);
       }
