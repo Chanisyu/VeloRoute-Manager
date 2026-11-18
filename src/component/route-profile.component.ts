@@ -15,10 +15,7 @@ let nextProfileId = 0;
     <section #frame class="rounded-xl border border-slate-200 bg-white overflow-hidden" aria-label="路线剖面图">
       <div class="flex flex-wrap items-center justify-between gap-2 px-4 pt-4 pb-2">
         <h3 class="text-sm font-semibold text-slate-800">路线剖面图</h3>
-        <div class="flex items-center gap-3">
-          <span class="text-xs text-slate-400">滚轮缩放 · 左键拖动</span>
-          <button type="button" (click)="resetView()" class="text-xs text-blue-600 hover:text-blue-800 rounded px-2 py-1 focus-visible:outline-blue-600">显示全程</button>
-        </div>
+        <button type="button" (click)="resetView()" class="text-xs text-blue-600 hover:text-blue-800 rounded px-2 py-1 focus-visible:outline-blue-600">显示全程</button>
       </div>
       <div class="relative select-none" data-testid="profile-plot">
         <svg class="block w-full h-[280px] touch-none" [style.cursor]="dragging() ? 'grabbing' : 'crosshair'"
@@ -37,7 +34,6 @@ let nextProfileId = 0;
             <line [attr.x1]="tick.pixel" [attr.x2]="tick.pixel" y1="22" y2="244" stroke="#f1f5f9" />
             <text [attr.x]="tick.pixel" y="263" text-anchor="middle" fill="#64748b" font-size="11">{{ tick.label }}</text>
           }
-          <text [attr.x]="width() - 16" y="278" text-anchor="end" fill="#64748b" font-size="10">里程（{{ profile().distance < 1000 ? 'm' : 'km' }}）</text>
           <g [attr.clip-path]="'url(#' + clipId + ')'">
             @for (path of paths(); track $index) {
               <path [attr.d]="path.area" fill="#dbeafe" fill-opacity="0.6" />
@@ -58,6 +54,8 @@ let nextProfileId = 0;
           </div>
         }
       </div>
+      <!-- 横轴单位独立排版，底部和右侧留出内边距，避免文字贴住剖面图边框。 -->
+      <div class="px-4 pb-3 text-right text-[10px] leading-4 text-slate-500">里程（{{ profile().distance < 1000 ? 'm' : 'km' }}）</div>
     </section>
   `
 })
