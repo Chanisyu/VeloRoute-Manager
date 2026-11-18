@@ -107,7 +107,8 @@ const MAPBOX_ZH_CN = {
             @if (folder.isExpanded) {
                 <div class="pl-6 space-y-1 mt-1 transition-all duration-300">
                   @for (route of getRoutesInFolder(folder.id); track route.id) {
-                    <label class="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors text-xs group/item">
+                    <!-- 路线行用于切换可见性，禁用文本选中以免双击时出现文字高亮。 -->
+                    <label class="flex items-center gap-2 cursor-pointer select-none hover:bg-slate-100 p-1 rounded transition-colors text-xs group/item">
                       <input type="checkbox" 
                         [checked]="route.isVisible" 
                         (change)="toggleRoute(route.id, $event)"
