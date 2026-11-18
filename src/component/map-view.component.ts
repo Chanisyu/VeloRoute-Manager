@@ -1,17 +1,18 @@
 
-import { Component, ElementRef, OnInit, ViewChild, OnDestroy, inject, effect, output, signal, untracked, NgZone } from '@angular/core';
-import { RouteService, RouteData } from '../services/route.service';
+import { ChangeDetectionStrategy, Component, ElementRef, OnInit, ViewChild, OnDestroy, inject, computed, effect, input, output, signal, untracked, NgZone } from '@angular/core';
+import { Folder, RouteService, RouteData } from '../services/route.service';
 import { FormsModule } from '@angular/forms';
 
 declare const mapboxgl: any;
 const ROUTE_LINE_WIDTH = 4;
 const ROUTE_LINE_OPACITY = 0.85;
 
-/** 地图命中事件中供路线悬浮使用的坐标与属性。 */
+/** 地图命中事件中供路线浮窗定位使用的坐标。 */
 interface RouteMapHoverEvent {
   lngLat: { lng: number; lat: number };
-  features?: Array<{ properties?: { description?: unknown } }>;
 }
+
+type BaseLayer = 'mapbox_outdoors' | 'osm';
 
 /** Mapbox 3.9.4 内置控件的中文文案；仅覆盖显示文本，不修改地图事件和地理数据。 */
 const MAPBOX_ZH_CN = {
@@ -33,6 +34,7 @@ const MAPBOX_ZH_CN = {
 @Component({
   selector: 'app-map-view',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [FormsModule],
   host: { 'class': 'block w-full h-full' },
   template: `
@@ -41,6 +43,8 @@ const MAPBOX_ZH_CN = {
       <!-- 'image-rendering: optimize-contrast' helps with sharpness on some WebKit screens -->
       <div #mapContainer class="w-full h-full z-0" style="image-rendering: -webkit-optimize-contrast;"></div>
 
+      <!-- 切页时仅卸载 Angular 控件，后台保留同一地图画布及已加载图层。 -->
+      @if (active()) {
       <!-- 底图切换：选项名称保留英文原名，操作提示使用中文。 -->
       <div class="absolute top-[110px] left-[10px] z-[400] group" (mouseenter)="handleMenuEnter()" (mouseleave)="handleMenuLeave()">
         
@@ -84,7 +88,7 @@ const MAPBOX_ZH_CN = {
          <div class="mb-3 px-2 py-2 bg-slate-50 border border-slate-100 rounded flex items-center gap-2">
             <input type="checkbox" 
                 id="compMode"
-                [ngModel]="service.appSettings().isComparisonMode"
+                [ngModel]="isComparisonMode()"
                 (ngModelChange)="toggleComparisonMode($event)"
                 class="rounded border-slate-300 text-purple-600 focus:ring-purple-500 h-4 w-4 cursor-pointer">
             <label for="compMode" class="text-xs font-bold text-slate-700 cursor-pointer select-none">
@@ -101,7 +105,7 @@ const MAPBOX_ZH_CN = {
               </button>
               <div class="flex min-w-0 items-center gap-2 px-1">
                 <input type="checkbox"
-                  [checked]="isFolderFullyVisible(folder.id)"
+                  [checked]="fullyVisibleFolders().has(folder.id)"
                   (change)="toggleFolderVisibility(folder.id, $event)"
                   class="h-3 w-3 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                   title="显示或隐藏该文件夹的全部路线">
@@ -112,7 +116,7 @@ const MAPBOX_ZH_CN = {
             
             @if (folder.isExpanded) {
                 <div class="pl-6 space-y-1 mt-1 transition-all duration-300">
-                  @for (route of getRoutesInFolder(folder.id); track route.id) {
+                  @for (route of service.routesByFolder().get(folder.id) ?? []; track route.id) {
                     <!-- 路线行用于切换可见性，禁用文本选中以免双击时出现文字高亮。 -->
                     <label class="flex items-center gap-2 cursor-pointer select-none hover:bg-slate-100 p-1 rounded transition-colors text-xs group/item"
                            [class.bg-slate-100]="mapHoverId() === route.id"
@@ -124,7 +128,7 @@ const MAPBOX_ZH_CN = {
                         class="h-3 w-3 shrink-0 rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                         
                       <span class="w-2 h-2 rounded-full shadow-sm ring-1 ring-black/10" 
-                            [style.backgroundColor]="service.appSettings().isComparisonMode ? (folder.color || '#999') : route.color">
+                            [style.backgroundColor]="isComparisonMode() ? (folder.color || '#999') : route.color">
                       </span>
                       
                       <span class="truncate group-hover/item:text-slate-900"
@@ -225,9 +229,11 @@ const MAPBOX_ZH_CN = {
             </div>
         </div>
       }
+      }
     </div>
   `
 })
+/** 管理同一会话中的地图实例，并在地图页可见时同步路线图层与交互。 */
 export class MapViewComponent implements OnInit, OnDestroy {
   @ViewChild('mapContainer', { static: true }) mapContainer!: ElementRef;
   
@@ -235,23 +241,34 @@ export class MapViewComponent implements OnInit, OnDestroy {
   zone = inject(NgZone);
   onManageClick = output<void>();
   onRouteSelect = output<string>();
+  readonly active = input(true);
 
   private map: any = null;
   private popup: any = null;
   private mapInitFrame?: number;
+  private mapToken?: string;
   private listHoverId?: string;
   // 列表订阅地图悬停以复用普通悬停样式；图层维护逻辑用 untracked 读取，避免悬停触发全量同步。
   protected readonly mapHoverId = signal<string | undefined>(undefined);
   private highlightedId?: string;
   private readonly routeInteractionCleanups = new Map<string, () => void>();
   
-  // 按实际添加顺序记录路线，用于恢复悬停前的叠放顺序。
-  private renderedRouteIds = new Set<string>();
+  // 保留已提交的路线与颜色，并按添加顺序还原高亮前的叠放关系。
+  private readonly renderedRoutes = new Map<string, { route: RouteData; color: string }>();
+  protected readonly isComparisonMode = computed(() => this.service.appSettings().isComparisonMode);
+  /** 路线列表变化时批量计算全选状态，空文件夹保持未选中。 */
+  protected readonly fullyVisibleFolders = computed(() => {
+    const ids = new Set<string>();
+    for (const [id, routes] of this.service.routesByFolder()) {
+      if (routes.every(route => route.isVisible)) ids.add(id);
+    }
+    return ids;
+  });
   
-  currentLayer = 'mapbox_outdoors';
+  currentLayer: BaseLayer = 'mapbox_outdoors';
   
-  // Signals for reactive state
-  isMapReady = signal(false); 
+  // 0 表示等待样式；每次 style.load 都通知路线同步，即使样式由地图内部重新加载。
+  private readonly styleRevision = signal(0);
   private initialBoundsSet = false;
 
   // Menu Animation
@@ -270,93 +287,95 @@ export class MapViewComponent implements OnInit, OnDestroy {
   // Resize Observer for robust responsiveness
   private resizeObserver: ResizeObserver | null = null;
 
+  /** 将地图实例的可见性和令牌管理与路线数据同步分开，后台不执行路线更新。 */
   constructor() {
     effect(() => {
-        // Track dependencies
-        const initialized = this.service.initialized();
-        const settings = this.service.appSettings();
-        
-        // Wait for storage load to avoid UI flash
-        if (!initialized) return;
+      if (!this.active()) {
+        this.zone.runOutsideAngular(() => this.pauseMapInteractions());
+        return;
+      }
 
-        // Initialize Map if key is present and valid
-        if (settings.mapboxApiKey && settings.mapboxKeyValid) {
-            if (!this.map) this.initMap(settings.mapboxApiKey);
-            this.showKeyModal.set(false);
-        } 
-        // Logic for missing/invalid key
-        else {
-             // If user hasn't explicitly said "Don't Remind", show the modal
-             if (!settings.dontRemindMapbox && !this.map) {
-                 this.showKeyModal.set(true);
-             }
-        }
+      const { mapboxApiKey, mapboxKeyValid, dontRemindMapbox } = this.service.appSettings();
+      this.zone.runOutsideAngular(() => {
+        // 只有实际使用的令牌变化才释放实例，临时校验失败时可继续查看已加载的地图。
+        if (this.mapToken !== undefined && this.mapToken !== mapboxApiKey) this.releaseMap();
+        const canInitialize = Boolean(mapboxApiKey && mapboxKeyValid);
+        if (canInitialize && !this.map) this.initMap(mapboxApiKey);
+        this.showKeyModal.set(!this.map && !canInitialize && !dontRemindMapbox);
+      });
+    }, { allowSignalWrites: true });
 
-        // Update map data when routes or comparison mode changes
-        // Dependency on isMapReady ensures this runs again once map initializes
-        if (this.isMapReady() && this.map) {
-             const routes = this.service.routes();
-             const mode = settings.isComparisonMode;
-             this.updateMapData(routes, mode);
-        }
-    }, { allowSignalWrites: true }); // Critical fix: allow writing signals (showKeyModal) inside effect
-  }
-
-  ngOnInit() {
-    // Check if we need to prepopulate key from settings (e.g. if it was invalid)
-    if (this.service.appSettings().mapboxApiKey) {
-        this.modalKey = this.service.appSettings().mapboxApiKey;
-    }
-
-    // Initialize ResizeObserver
-    if (this.mapContainer?.nativeElement) {
-      this.resizeObserver = new ResizeObserver(() => {
-        if (this.map) {
-           this.map.resize();
+    effect(() => {
+      if (!this.active() || this.styleRevision() === 0) return;
+      const routes = this.service.routes();
+      const folders = this.service.folders();
+      const isComparisonMode = this.isComparisonMode();
+      this.zone.runOutsideAngular(() => {
+        this.updateMapData(routes, folders, isComparisonMode);
+        if (!this.initialBoundsSet && routes.some(route => route.isVisible)) {
+          this.initialBoundsSet = true;
+          this.fitAllBounds(true);
         }
       });
-      this.resizeObserver.observe(this.mapContainer.nativeElement);
-    }
+    }, { allowSignalWrites: true });
   }
 
-  /** @returns 无返回值；切换页时保存视角，释放地图并取消未执行的初始化。 */
-  ngOnDestroy(): void {
+  /** @returns 无返回值；设置令牌输入框，并用同一个观察器跟踪地图容器尺寸。 */
+  ngOnInit(): void {
+    this.modalKey = this.service.appSettings().mapboxApiKey;
+    this.zone.runOutsideAngular(() => {
+      this.resizeObserver = new ResizeObserver(() => this.map?.resize());
+      this.resizeObserver.observe(this.mapContainer.nativeElement);
+    });
+  }
+
+  /** @returns 无返回值；离开地图页时暂停临时交互，保留图层、画布及视角。 */
+  private pauseMapInteractions(): void {
+    this.map?.stop();
+    this.listHoverId = undefined;
+    this.clearMapHover();
+    this.syncRouteHighlight();
+    clearTimeout(this.hideTimer);
+    clearTimeout(this.fadeTimer);
+    this.menuVisible.set(false);
+    this.menuRendered.set(false);
+  }
+
+  /** @returns 无返回值；更换令牌或卸载组件时释放地图，供重建复用最后视角。 */
+  private releaseMap(): void {
     if (this.mapInitFrame !== undefined) cancelAnimationFrame(this.mapInitFrame);
-    // Save map state before destroying
-    if (this.map) {
-        const center = this.map.getCenter();
-        const zoom = this.map.getZoom();
-        const pitch = this.map.getPitch();
-        const bearing = this.map.getBearing();
-        
-        this.service.mapState.set({
-            center: { lng: center.lng, lat: center.lat },
-            zoom,
-            pitch,
-            bearing
-        });
-        
-        this.map.remove();
-        this.map = null;
-        this.routeInteractionCleanups.clear();
-    }
-    
-    if (this.resizeObserver) {
-        this.resizeObserver.disconnect();
-    }
-    
+    this.mapInitFrame = undefined;
+    this.mapToken = undefined;
+    this.styleRevision.set(0);
+    if (!this.map) return;
+
+    this.pauseMapInteractions();
+    const { lng, lat } = this.map.getCenter();
+    this.service.mapState.set({ center: { lng, lat }, zoom: this.map.getZoom(),
+      pitch: this.map.getPitch(), bearing: this.map.getBearing() });
+    this.map.remove();
+    this.map = null;
+    this.popup = null;
+    this.routeInteractionCleanups.clear();
+    this.renderedRoutes.clear();
+  }
+
+  /** @returns 无返回值；应用卸载地图组件时取消尺寸跟踪并释放 WebGL 资源。 */
+  ngOnDestroy(): void {
+    this.resizeObserver?.disconnect();
+    this.releaseMap();
     clearTimeout(this.hideTimer);
     clearTimeout(this.fadeTimer);
   }
 
-  /** @param {string} apiKey 已通过校验的访问令牌。 @returns {void} 创建使用中文控件的地图，保留原有底图与视角逻辑。 */
-  private initMap(apiKey: string) {
+  /** @param apiKey 已通过校验的访问令牌。 @returns 无返回值；容器完成布局后在 Angular 区域外创建地图。 */
+  private initMap(apiKey: string): void {
     if (this.map || this.mapInitFrame !== undefined) return;
 
-    // Use requestAnimationFrame to ensuring the container has calculated dimensions
+    this.mapToken = apiKey;
     this.mapInitFrame = requestAnimationFrame(() => {
         this.mapInitFrame = undefined;
-        if (this.map || !this.mapContainer?.nativeElement) return;
+        if (this.map || !this.active()) return;
 
         mapboxgl.accessToken = apiKey;
         
@@ -366,7 +385,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
         this.map = new mapboxgl.Map({
             locale: MAPBOX_ZH_CN,
             container: this.mapContainer.nativeElement,
-            style: 'mapbox://styles/mapbox/outdoors-v12',
+            style: this.getBaseStyle(),
             center: savedState ? savedState.center : [114.2477, 22.7199], 
             zoom: savedState ? savedState.zoom : 12,
             pitch: savedState ? savedState.pitch : 0,
@@ -376,14 +395,11 @@ export class MapViewComponent implements OnInit, OnDestroy {
             antialias: true,
             // Force High DPI rendering
             pixelRatio: window.devicePixelRatio || 1,
-            // Explicitly enable resize tracking
-            trackResize: true
+            // 容器已有尺寸观察器，避免窗口缩放同时触发 Mapbox 的两套尺寸更新。
+            trackResize: false
         });
         
-        // If we restored state, mark bounds as set to prevent auto-fit
-        if (savedState) {
-            this.initialBoundsSet = true;
-        }
+        this.initialBoundsSet = Boolean(savedState);
 
         // MATCH GPX STUDIO: visualizePitch: true
         this.map.addControl(new mapboxgl.NavigationControl({ visualizePitch: true }), 'top-left');
@@ -394,19 +410,11 @@ export class MapViewComponent implements OnInit, OnDestroy {
             className: 'route-popup'
         });
 
-        // Trigger isMapReady when basic load is done
-        this.map.once('load', () => {
-            this.map.resize();
-            this.isMapReady.set(true); 
-        });
-
-        // Add pitch listener to toggle terrain like GPX Studio
+        // 地形只在非零倾角启用；平移与缩放无需处理地形。
         this.map.on('pitch', () => this.updateTerrain());
 
         // Handle Style loads
         this.map.on('style.load', () => {
-            this.map.resize();
-
             // 1. MATCH GPX STUDIO: Specific Fog Colors
             try {
                 this.map.setFog({
@@ -436,53 +444,37 @@ export class MapViewComponent implements OnInit, OnDestroy {
             this.clearMapHover();
             for (const cleanup of this.routeInteractionCleanups.values()) cleanup();
             this.routeInteractionCleanups.clear();
-            this.renderedRouteIds.clear();
-            
-            setTimeout(() => {
-                 this.updateMapData(this.service.routes(), this.service.appSettings().isComparisonMode);
-            }, 150);
-
-            if (!this.initialBoundsSet && this.service.routes().some(r => r.isVisible)) {
-                setTimeout(() => {
-                   this.fitAllBounds(true);
-                   this.initialBoundsSet = true;
-                }, 100);
-            }
+            this.renderedRoutes.clear();
+            // 样式就绪后即可提交路线，不等待固定延时或所有远程瓦片下载完成。
+            this.styleRevision.update(revision => revision + 1);
         });
     });
   }
 
-  // MATCH GPX STUDIO: Terrain Logic
-  private updateTerrain() {
-      if (!this.map || !this.map.getStyle()) return;
+  /** @returns 无返回值；首次倾斜时才加载地形源，平面视角停止使用地形。 */
+  private updateTerrain(): void {
+      if (!this.map) return;
 
       const sourceId = 'mapbox-dem';
-      const isPitched = this.map.getPitch() > 0;
-      
-      if (!this.map.getSource(sourceId)) {
-           try {
+      try {
+          const currentTerrain = this.map.getTerrain();
+          if (this.map.getPitch() <= 0) {
+              if (currentTerrain) this.map.setTerrain(null);
+              return;
+          }
+          if (currentTerrain?.source === sourceId && currentTerrain.exaggeration === 1) return;
+          if (!this.map.getSource(sourceId)) {
               this.map.addSource(sourceId, {
                   'type': 'raster-dem',
                   'url': 'mapbox://mapbox.mapbox-terrain-dem-v1',
                   'tileSize': 512,
                   'maxzoom': 14
               });
-           } catch (e) { return; }
-      }
-
-      try {
-          if (isPitched) {
-              const currentTerrain = this.map.getTerrain();
-              if (!currentTerrain || currentTerrain.source !== sourceId || currentTerrain.exaggeration !== 1) {
-                  this.map.setTerrain({ 'source': sourceId, 'exaggeration': 1 });
-              }
-          } 
-          else {
-              if (this.map.getTerrain()) {
-                  this.map.setTerrain(null);
-              }
           }
-      } catch (e) {}
+          this.map.setTerrain({ source: sourceId, exaggeration: 1 });
+      } catch {
+          // 样式加载期间可能收到倾斜事件，style.load 会按当前倾角重试。
+      }
   }
 
   private enhanceContours() {
@@ -529,68 +521,64 @@ export class MapViewComponent implements OnInit, OnDestroy {
   // --- Mapbox Data Handling ---
 
   /**
-   * 同步路线的独立显示与命中图层；已知分段以多段线绘制，不跨缺口连线。
+   * 对比最近一次提交的数据，仅同步发生变化的可见图层。
    * @param routes 当前路线快照。
+   * @param folders 当前文件夹快照，用于颜色和悬停状态判断。
    * @param isCompMode 是否按文件夹着色。
-   * @returns 无返回值；地图或样式未就绪时沿用原有保护逻辑。
+   * @returns 无返回值；路线 ID 相同的备份仍可更新几何数据。
    */
-  private updateMapData(routes: RouteData[], isCompMode: boolean) {
-      if (!this.map || !this.map.getStyle()) return;
+  private updateMapData(routes: RouteData[], folders: Folder[], isCompMode: boolean): void {
+      if (!this.map) return;
 
-      const folders = this.service.folders();
-      const hoveredRoute = routes.find(route => route.id === this.listHoverId);
+      const foldersById = new Map(folders.map(folder => [folder.id, folder]));
+      const hoveredRoute = this.listHoverId && routes.find(route => route.id === this.listHoverId);
       // 路线行被移除或收起时，浏览器可能不会发出 mouseleave。
-      if (!hoveredRoute || !folders.some(folder => folder.id === hoveredRoute.folderId && folder.isExpanded)) {
+      if (!hoveredRoute || !foldersById.get(hoveredRoute.folderId)?.isExpanded) {
           this.listHoverId = undefined;
       }
       const visibleRoutes = routes.filter(r => r.isVisible);
       const visibleIds = new Set(visibleRoutes.map(r => r.id));
 
-      this.renderedRouteIds.forEach(id => {
+      for (const id of this.renderedRoutes.keys()) {
           if (!visibleIds.has(id)) {
               this.removeRouteFromMap(id);
-              this.renderedRouteIds.delete(id);
+              this.renderedRoutes.delete(id);
           }
-      });
+      }
 
-      visibleRoutes.forEach(route => {
-          let color = route.color;
-          if (isCompMode) {
-            const folder = folders.find(f => f.id === route.folderId);
-            if (folder && folder.color) color = folder.color;
-          }
-
+      for (const route of visibleRoutes) {
+          const folderColor = isCompMode ? foldersById.get(route.folderId)?.color : undefined;
+          const color = folderColor || route.color;
           const layerId = `route-layer-${route.id}`;
-          const layerExists = !!this.map.getLayer(layerId);
-          const isTracked = this.renderedRouteIds.has(route.id);
-
-          if (!isTracked || !layerExists) {
+          const rendered = this.renderedRoutes.get(route.id);
+          if (!rendered || !this.map.getLayer(layerId)) {
               this.removeRouteFromMap(route.id);
-              this.addRouteToMap(route, color);
               // 重建的图层重新追加到末尾，旧记录也要移到添加顺序的末尾。
-              this.renderedRouteIds.delete(route.id);
-              this.renderedRouteIds.add(route.id);
-          } else {
+              this.renderedRoutes.delete(route.id);
+              if (this.addRouteToMap(route, color)) this.renderedRoutes.set(route.id, { route, color });
+              continue;
+          }
+          if (rendered.route.points !== route.points || rendered.route.segmentStarts !== route.segmentStarts) {
+              this.map.getSource(`route-source-${route.id}`).setData(this.routeFeature(route));
+          }
+          if (rendered.color !== color) {
               this.map.setPaintProperty(layerId, 'line-color', color);
           }
-      });
+          if (rendered.route !== route || rendered.color !== color) this.renderedRoutes.set(route.id, { route, color });
+      }
       // 可见性变化或样式重载后，仍在列表中的悬停可以应用到新建立的图层。
       this.syncRouteHighlight();
   }
 
   /**
-   * 建立路线的多段GeoJSON、可见层和命中层，避免将原始分段之间的空白画成路线。
+   * 将分段转换为地图数据，不跨原始分段连接。
    * @param route 含原始坐标及可选分段的路线；旧路线沿用单段表现。
-   * @param color 当前路线或文件夹颜色。
-   * @returns 无返回值；少于两个点的独立分段不绘制，地图异常沿用原有捕获逻辑。
+   * @returns 多段 GeoJSON 要素，忽略不足两个点的独立分段。
    */
-  private addRouteToMap(route: RouteData, color: string) {
-      const geojson = {
+  private routeFeature(route: RouteData) {
+      return {
           type: 'Feature',
-          properties: {
-              id: route.id,
-              description: `<strong class="text-sm">${route.name}</strong><br><span class="text-xs text-gray-500">${route.stats.distanceKm} km</span>`
-          },
+          properties: { id: route.id },
           geometry: {
               // 各段独立绘制；历史路线没有分段时仍按原有单段显示，不猜测断点。
               type: 'MultiLineString',
@@ -599,14 +587,17 @@ export class MapViewComponent implements OnInit, OnDestroy {
               ).filter(segment => segment.length >= 2)
           }
       };
+  }
 
+  /** @param route 可见路线。 @param color 路线或文件夹颜色。 @returns 是否成功添加数据源、图层及交互。 */
+  private addRouteToMap(route: RouteData, color: string): boolean {
       try {
         const sourceId = `route-source-${route.id}`;
         const hitLayerId = `route-hit-${route.id}`;
         const visLayerId = `route-layer-${route.id}`;
 
         if (!this.map.getSource(sourceId)) {
-            this.map.addSource(sourceId, { type: 'geojson', data: geojson });
+            this.map.addSource(sourceId, { type: 'geojson', data: this.routeFeature(route) });
         }
         if (!this.map.getLayer(hitLayerId)) {
             this.map.addLayer({
@@ -624,8 +615,10 @@ export class MapViewComponent implements OnInit, OnDestroy {
         }
 
         this.setupInteractions(route.id);
+        return true;
       } catch (e) {
           console.error(`Failed to render route ${route.id}`, e);
+          return false;
       }
   }
 
@@ -645,12 +638,21 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
       /** @param event 地图命中事件。 @returns 无返回值；显示当前命中路线的高亮和浮窗。 */
       const enter = (event: RouteMapHoverEvent): void => {
-          const description = event.features?.[0]?.properties?.description;
-          if (typeof description !== 'string') return;
+          const route = this.renderedRoutes.get(id)?.route;
+          if (!this.active() || !route) return;
           this.mapHoverId.set(id);
           this.map.getCanvas().style.cursor = 'pointer';
           this.syncRouteHighlight();
-          this.popup.setLngLat(event.lngLat).setHTML(description).addTo(this.map);
+          // 浮窗直接读当前路线元数据，改名不需重发几何数据；名称按纯文本插入。
+          const content = document.createElement('div');
+          const name = document.createElement('strong');
+          name.className = 'text-sm';
+          name.textContent = route.name;
+          const distance = document.createElement('span');
+          distance.className = 'text-xs text-gray-500';
+          distance.textContent = `${route.stats.distanceKm} km`;
+          content.append(name, document.createElement('br'), distance);
+          this.popup.setLngLat(event.lngLat).setDOMContent(content).addTo(this.map);
       };
 
       /** @returns 无返回值；重叠路线的离开事件不能清除另一条路线的提示。 */
@@ -661,7 +663,9 @@ export class MapViewComponent implements OnInit, OnDestroy {
       };
 
       /** @returns 无返回值；通知根组件打开该路线详情。 */
-      const select = (): void => this.zone.run(() => this.onRouteSelect.emit(id));
+      const select = (): void => {
+          if (this.active()) this.zone.run(() => this.onRouteSelect.emit(id));
+      };
       this.map.on('mouseenter', hitLayer, enter);
       this.map.on('mouseleave', hitLayer, leave);
       this.map.on('click', hitLayer, select);
@@ -707,7 +711,7 @@ export class MapViewComponent implements OnInit, OnDestroy {
    */
   private nextRouteHitLayer(id: string): string | undefined {
       let afterRoute = false;
-      for (const routeId of this.renderedRouteIds) {
+      for (const routeId of this.renderedRoutes.keys()) {
           if (afterRoute) {
               const hitLayer = `route-hit-${routeId}`;
               if (this.map.getLayer(hitLayer)) return hitLayer;
@@ -719,9 +723,11 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
   /** @param id 鼠标所在路线，离开时省略。 @returns 无返回值；列表悬停仅触发图层高亮。 */
   setListHover(id?: string): void {
-      if (id !== undefined) this.clearMapHover();
-      this.listHoverId = id;
-      this.syncRouteHighlight();
+      this.zone.runOutsideAngular(() => {
+          if (id !== undefined) this.clearMapHover();
+          this.listHoverId = id;
+          this.syncRouteHighlight();
+      });
   }
 
   /** @param event 路线行右键事件。 @param id 列表路线的标识符。 @returns 无返回值；隐藏路线也可打开详情。 */
@@ -732,11 +738,14 @@ export class MapViewComponent implements OnInit, OnDestroy {
 
   // --- UI Interactions ---
 
-  handleMenuEnter() {
+  /** @returns 无返回值；取消旧关闭任务，并在当前地图页显示底图菜单。 */
+  handleMenuEnter(): void {
     clearTimeout(this.hideTimer);
     clearTimeout(this.fadeTimer);
     this.menuRendered.set(true);
-    requestAnimationFrame(() => this.menuVisible.set(true));
+    requestAnimationFrame(() => {
+      if (this.active() && this.menuRendered()) this.menuVisible.set(true);
+    });
   }
 
   handleMenuLeave() {
@@ -746,39 +755,36 @@ export class MapViewComponent implements OnInit, OnDestroy {
       }, 500);
   }
 
-  changeBaseLayer(layer: string) {
-      if (this.currentLayer === layer) return;
-      this.currentLayer = layer;
-      
-      if (this.map) {
-          if (layer === 'osm') {
-              const osmStyle = {
-                  version: 8,
-                  sources: {
-                      'osm-raster-tiles': {
-                          type: 'raster',
-                          tiles: [ 'https://tile.openstreetmap.org/{z}/{x}/{y}.png' ],
-                          tileSize: 256,
-                          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                      }
-                  },
-                  layers: [
-                      {
-                          id: 'osm-raster-layer',
-                          type: 'raster',
-                          source: 'osm-raster-tiles',
-                          minzoom: 0,
-                          maxzoom: 19
-                      }
-                  ]
-              };
-              this.map.setStyle(osmStyle);
-          } else {
-             this.map.setStyle('mapbox://styles/mapbox/outdoors-v12');
-          }
-      }
-      this.menuVisible.set(false);
-      setTimeout(() => this.menuRendered.set(false), 300);
+  /** @returns 当前选中的底图样式；更换令牌后重建实例也复用同一选项。 */
+  private getBaseStyle() {
+    if (this.currentLayer === 'mapbox_outdoors') return 'mapbox://styles/mapbox/outdoors-v12';
+    return {
+      version: 8,
+      sources: {
+        'osm-raster-tiles': {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }
+      },
+      layers: [{ id: 'osm-raster-layer', type: 'raster', source: 'osm-raster-tiles', minzoom: 0, maxzoom: 19 }]
+    };
+  }
+
+  /** @param layer 要显示的底图。 @returns 无返回值；样式就绪前暂停路线同步。 */
+  changeBaseLayer(layer: BaseLayer): void {
+    if (this.currentLayer === layer) return;
+    this.currentLayer = layer;
+    if (this.map) {
+      this.styleRevision.set(0);
+      // 采用完整的样式切换，确保 style.load 能统一恢复应用添加的路线图层。
+      this.zone.runOutsideAngular(() => this.map.setStyle(this.getBaseStyle(), { diff: false }));
+    }
+    clearTimeout(this.hideTimer);
+    clearTimeout(this.fadeTimer);
+    this.menuVisible.set(false);
+    this.fadeTimer = setTimeout(() => this.menuRendered.set(false), 300);
   }
 
   async validateAndSave() {
@@ -804,7 +810,8 @@ export class MapViewComponent implements OnInit, OnDestroy {
      this.showKeyModal.set(false);
   }
 
-  fitAllBounds(immediate = false) {
+  /** @param immediate 是否立即定位，用于首次展示。 @returns 无返回值；没有可见路线时保持当前视角。 */
+  fitAllBounds(immediate = false): void {
     if (!this.map) return;
     const routes = this.service.routes().filter(r => r.isVisible);
     if (routes.length === 0) return;
@@ -817,16 +824,12 @@ export class MapViewComponent implements OnInit, OnDestroy {
     });
 
     if (!bounds.isEmpty()) {
-        this.map.fitBounds(bounds, { padding: 50, animate: !immediate });
+        this.zone.runOutsideAngular(() => this.map.fitBounds(bounds, { padding: 50, animate: !immediate }));
     }
   }
 
   // --- UI Helpers ---
   
-  getRoutesInFolder(folderId: string) {
-    return this.service.routes().filter(r => r.folderId === folderId);
-  }
-
   toggleRoute(id: string, event: Event) {
     const checked = (event.target as HTMLInputElement).checked;
     this.service.toggleRouteVisibility(id, checked);
@@ -835,12 +838,6 @@ export class MapViewComponent implements OnInit, OnDestroy {
   toggleFolderVisibility(folderId: string, event: Event) {
       const checked = (event.target as HTMLInputElement).checked;
       this.service.toggleFolderVisibility(folderId, checked);
-  }
-
-  isFolderFullyVisible(folderId: string): boolean {
-      const routes = this.getRoutesInFolder(folderId);
-      if (routes.length === 0) return false;
-      return routes.every(r => r.isVisible);
   }
 
   toggleComparisonMode(val: boolean) {

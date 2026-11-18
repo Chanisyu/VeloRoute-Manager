@@ -82,7 +82,7 @@ import { RouteProfileComponent } from './route-profile.component';
 
               @if (folder.isExpanded) {
                 <div class="bg-slate-50 border-t border-slate-100 p-2 space-y-1">
-                    @for (route of getRoutesInFolder(folder.id); track route.id) {
+                    @for (route of service.routesByFolder().get(folder.id) ?? []; track route.id) {
                     <div 
                         (click)="selectRoute(route)"
                         class="cursor-pointer px-3 py-2 rounded-md text-sm border transition-all"
@@ -247,10 +247,6 @@ export class ManagementViewComponent implements OnInit {
     if (initId) {
       this.selectedRouteId.set(initId);
     }
-  }
-
-  getRoutesInFolder(folderId: string) {
-    return this.service.routes().filter(r => r.folderId === folderId);
   }
 
   /**

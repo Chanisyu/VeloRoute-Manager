@@ -15,12 +15,15 @@ import { SettingsViewComponent } from './component/settings-view.component';
     <app-storage-status></app-storage-status>
     <main class="w-screen h-screen overflow-hidden relative" [attr.inert]="service.restoring() ? '' : null">
       @if (service.initialized() && !service.loadError()) {
-      @if (currentMode() === 'map') {
-        <app-map-view 
+      <!-- 保留 WebGL 画布的尺寸和图层。切页只隐藏地图，后台控件不接收鼠标或键盘输入。 -->
+      <div class="absolute inset-0" [class.invisible]="currentMode() !== 'map'" [attr.inert]="currentMode() === 'map' ? null : ''">
+        <app-map-view
+          [active]="currentMode() === 'map'"
           (onManageClick)="setMode('manage')"
           (onRouteSelect)="goToManageWithRoute($event)"
         ></app-map-view>
-      } @else if (currentMode() === 'manage') {
+      </div>
+      @if (currentMode() === 'manage') {
         <app-management-view 
           [initialRouteId]="activeRouteId()"
           (onBack)="setMode('map')"

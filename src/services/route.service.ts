@@ -1,7 +1,7 @@
 import { describeError } from '../../shared/user-messages.mjs';
 import { calculateRouteStats } from '../../shared/route-statistics.mjs';
 import { parseFitRoute } from '../../shared/fit-route.mjs';
-import { Injectable, signal, effect, NgZone, inject } from '@angular/core';
+import { Injectable, signal, computed, effect, NgZone, inject } from '@angular/core';
 import {
   normalizeData, CURRENT_VERSION,
   type RouteStats, type RoutePoint, type RouteData, type Folder, type AppSettings,
@@ -41,6 +41,17 @@ export class RouteService {
 
   routes = signal<RouteData[]>([]);
 
+  /** 文件夹和地图列表共用分组索引，只在路线快照变化时遍历一次。 */
+  readonly routesByFolder = computed(() => {
+    const groups = new Map<string, RouteData[]>();
+    for (const route of this.routes()) {
+      const group = groups.get(route.folderId);
+      if (group) group.push(route);
+      else groups.set(route.folderId, [route]);
+    }
+    return groups;
+  });
+
   appSettings = signal<AppSettings>({
     mapboxApiKey: '',
     mapboxKeyValid: false,
@@ -48,7 +59,7 @@ export class RouteService {
     isComparisonMode: false
   });
   
-  // Temporary state for map view persistence
+  // 地图正常切页时直接保留实例；只有令牌切换等需要重建时才通过内存快照恢复视角。
   mapState = signal<MapState | null>(null);
 
   // Expose initialization state to components

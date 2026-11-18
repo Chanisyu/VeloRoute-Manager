@@ -6,6 +6,7 @@ test.use({ launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-s
 /** @param {import('@playwright/test').Page} page 测试页面。 @returns {Promise<void>} 使用本地空底图和隔离的合成路线启动。 */
 async function openMap(page) {
   await page.route('https://**/*', route => route.abort());
+  await page.route('https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/**', route => route.fulfill({ status: 200 }));
   await page.route('**/vendor/mapbox-gl.js', async route => {
     const response = await route.fetch();
     // 保持实际 Mapbox 实现，只替换底图并公开实例以核对真实图层属性。
@@ -14,7 +15,8 @@ async function openMap(page) {
         const OriginalMap = mapboxgl.Map;
         mapboxgl.Map = class extends OriginalMap {
           constructor(options) {
-            super({ ...options, projection: 'mercator', style: { version: 8, sources: {}, layers: [] } });
+            const style = typeof options.style === 'string' ? { version: 8, sources: {}, layers: [] } : options.style;
+            super({ ...options, projection: 'mercator', style });
             window.testRouteMap = this;
           }
         };
@@ -112,4 +114,96 @@ test('地图与列表双向高亮，悬停置顶，右键可打开隐藏路线�
   await expect.poll(() => paint(page, 'hidden')).toBeNull();
   await hidden.click({ button: 'right' });
   await expect(page.getByRole('heading', { name: '隐藏路线', exact: true })).toBeVisible();
+});
+
+test('经设置返回保留画布、底图、视角和图层，仅同步后台恢复的数据', async ({ page }) => {
+  await openMap(page);
+  await expect.poll(() => paint(page, 'first')).toEqual([4, 0.85]);
+  expect(await page.evaluate(() => Boolean(window.testRouteMap.getSource('mapbox-dem')))).toBe(false);
+  await page.getByTitle('切换底图').hover();
+  await page.getByRole('button', { name: 'OpenStreetMap', exact: true }).click();
+  await expect.poll(() => paint(page, 'first')).toEqual([4, 0.85]);
+
+  const camera = await page.evaluate(() => {
+    const map = window.testRouteMap;
+    map.jumpTo({ center: [114.025, 22], zoom: 13, bearing: 15 });
+    const source = map.getSource('route-source-first');
+    const originalSetData = source.setData;
+    const originalSetPaintProperty = map.setPaintProperty;
+    const cache = window.initialMap = { map, source, canvas: map.getCanvas(), geometryWrites: 0, colorWrites: 0 };
+    // 记录真正发往 Mapbox 的更新，重复提交同样的颜色也计作写入。
+    source.setData = function (data) {
+      cache.geometryWrites++;
+      return originalSetData.call(this, data);
+    };
+    map.setPaintProperty = function (layer, property, value) {
+      if (layer.startsWith('route-layer-') && property === 'line-color') cache.colorWrites++;
+      return originalSetPaintProperty.call(this, layer, property, value);
+    };
+    return { center: map.getCenter().toArray(), zoom: map.getZoom(), bearing: map.getBearing() };
+  });
+  const canvas = page.locator('.mapboxgl-canvas');
+  const manage = page.getByRole('button', { name: '路线管理与 GPX / FIT 导入' });
+  const backToMap = page.getByRole('button', { name: '返回地图', exact: true });
+  await manage.click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await expect(canvas).toHaveCount(1);
+  await expect(canvas).toBeHidden();
+  await page.getByRole('button', { name: '返回路线管理', exact: true }).click();
+  await backToMap.click();
+  await expect(canvas).toBeVisible();
+  expect(await page.evaluate(() => {
+    const { map, source, canvas, geometryWrites, colorWrites } = window.initialMap;
+    return {
+      sameMap: window.testRouteMap === map, sameCanvas: canvas === map.getCanvas(),
+      osm: Boolean(map.getLayer('osm-raster-layer')), sameSource: source === map.getSource('route-source-first'),
+      center: map.getCenter().toArray(), zoom: map.getZoom(), bearing: map.getBearing(), geometryWrites, colorWrites
+    };
+  })).toEqual({ sameMap: true, sameCanvas: true, osm: true, sameSource: true, ...camera, geometryWrites: 0, colorWrites: 0 });
+
+  await manage.click();
+  const backup = await page.evaluate(() => {
+    const data = JSON.parse(localStorage.getItem('velo_data'));
+    data.routes[0].name = '恢复后的路线';
+    data.routes[0].color = '#2563eb';
+    data.routes[0].points[0].lon = 114.001;
+    return data;
+  });
+  page.on('dialog', dialog => dialog.accept());
+  await page.locator('input[accept=".json"]').setInputFiles({
+    name: 'updated.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup))
+  });
+  await expect(page.getByText('恢复后的路线', { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => window.initialMap.geometryWrites)).toBe(0);
+  await backToMap.click();
+  await expect(page.getByText('恢复后的路线', { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    const { map, source } = window.initialMap;
+    return [source === map.getSource('route-source-first'), source.serialize().data.geometry.coordinates[0][0],
+      map.getPaintProperty('route-layer-first', 'line-color')];
+  })).toEqual([true, [114.001, 22], '#2563eb']);
+});
+
+test('实际更换令牌时重建地图，保留底图和视角', async ({ page }) => {
+  await openMap(page);
+  await expect.poll(() => paint(page, 'first')).toEqual([4, 0.85]);
+  await page.getByTitle('切换底图').hover();
+  await page.getByRole('button', { name: 'OpenStreetMap', exact: true }).click();
+  await expect.poll(() => paint(page, 'first')).toEqual([4, 0.85]);
+  await page.evaluate(() => {
+    window.initialMap = window.testRouteMap;
+    window.initialMap.jumpTo({ center: [114.025, 22], zoom: 13, bearing: 15 });
+  });
+  await page.getByRole('button', { name: '路线管理与 GPX / FIT 导入' }).click();
+  await page.getByRole('button', { name: '设置', exact: true }).click();
+  await page.getByLabel('Mapbox 访问令牌').fill('pk.new-test-token');
+  await page.getByRole('button', { name: '校验并保存', exact: true }).click();
+  await expect(page.getByText('访问令牌校验通过，地图功能已启用。')).toBeVisible();
+  await page.getByRole('button', { name: '返回路线管理', exact: true }).click();
+  await page.getByRole('button', { name: '返回地图', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => {
+    const map = window.testRouteMap;
+    return [map !== window.initialMap, Boolean(map.getLayer('osm-raster-layer')), Boolean(map.getLayer('route-layer-first')),
+      map.getCenter().toArray(), map.getZoom(), map.getBearing()];
+  })).toEqual([true, true, true, [114.025, 22], 13, 15]);
 });
