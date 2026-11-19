@@ -105,3 +105,82 @@ test('桌面静态构建导入 GPX 和 FIT 并在重启后恢复路线来源', a
     await fs.rm(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 });
+
+test('GPX Studio 使用隔离窗口打开本机副本，编辑结果导回原文件夹', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'veloroute-gpx-exchange-'));
+  let desktop;
+  try {
+    const env = { ...process.env, VELOROUTE_DEV_SERVER: '0', VELOROUTE_USER_DATA_DIR: directory };
+    delete env.ELECTRON_RUN_AS_NODE;
+    desktop = await electron.launch({ args: [root], env });
+    const page = await desktop.firstWindow();
+    // 只替换官网页面，不替换 Electron 窗口、隔离会话或一次性协议。
+    await desktop.evaluate(({ session }) => {
+      const editor = session.fromPartition('persist:veloroute-gpx-studio');
+      editor.protocol.handle('https', request => {
+        const url = new URL(request.url);
+        if (url.origin !== 'https://gpx.studio') return new Response(null, { status: 404 });
+        return new Response('<output id="gpx"></output><script>' +
+          'const files=JSON.parse(new URL(location.href).searchParams.get("files")||"[]");' +
+          'if(files[0])fetch(files[0]).then(r=>r.text()).then(xml=>document.querySelector("output").textContent=xml);' +
+          '</script>', { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      });
+    });
+    await openLibrary(page);
+    const original = {
+      name: '山路 & 测试.gpx', mimeType: 'application/gpx+xml',
+      buffer: Buffer.from('<gpx><trk><trkseg><trkpt lat="0.0000001" lon="114"><ele>0</ele></trkpt>' +
+        '<trkpt lat="22" lon="114.01"/></trkseg><trkseg><trkpt lat="23" lon="115"><ele>-5</ele></trkpt>' +
+        '<trkpt lat="23.01" lon="115.01"><ele>25</ele></trkpt></trkseg></trk></gpx>')
+    };
+    await page.locator('input[type=file][accept=".gpx,.fit"]').first().setInputFiles(original);
+    await page.getByText('山路 & 测试', { exact: true }).click();
+    await expect(page.getByRole('heading', { name: '山路 & 测试', exact: true })).toBeVisible();
+    const windowReady = desktop.waitForEvent('window');
+    await page.getByRole('button', { name: '在 GPX Studio 编辑副本' }).click();
+    const editor = await windowReady;
+    const received = editor.locator('output');
+    await expect(received).toContainText('<name>山路 &amp; 测试</name>');
+    const xml = await received.textContent();
+    expect(xml.match(/<trkseg>/g)).toHaveLength(2);
+    expect(xml).toContain('<trkpt lat="0.0000001" lon="114"><ele>0</ele>');
+    expect(xml).toContain('<trkpt lat="22" lon="114.01"></trkpt>');
+    expect(xml).toContain('<ele>-5</ele>');
+    expect(decodeURIComponent(editor.url())).not.toContain('山路');
+    expect(await editor.evaluate(() => [typeof window.electronAPI, typeof window.require])).toEqual(['undefined', 'undefined']);
+    expect(await editor.evaluate(async () => {
+      const [file] = JSON.parse(new URL(location.href).searchParams.get('files'));
+      return (await fetch(file)).status;
+    })).toBe(404);
+
+    // 上游支持导出 rte；通过详情页导入入口复用原有持久化流程。
+    await editor.close();
+    const chooseFile = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: '导入编辑结果' }).click();
+    await (await chooseFile).setFiles({
+      name: '编辑后的山路.gpx', mimeType: 'application/gpx+xml',
+      buffer: Buffer.from('<gpx xmlns:gpxx="http://www.garmin.com/xmlschemas/GpxExtensions/v3">' +
+        '<rte><rtept lat="22" lon="114"><extensions><gpxx:RoutePointExtension><gpxx:rpt lat="22.005" lon="114.002"/>' +
+        '</gpxx:RoutePointExtension></extensions></rtept><rtept lat="22" lon="114.01"/></rte>' +
+        '<rte><rtept lat="23" lon="115"/><rtept lat="23" lon="115.01"/></rte></gpx>')
+    });
+    await expect(page.getByText('编辑后的山路', { exact: true })).toBeVisible();
+    await expect.poll(async () => {
+      const data = JSON.parse(await fs.readFile(path.join(directory, 'storage.json'), 'utf8'));
+      return data.routes.map(route => [route.name, route.folderId, route.sourceFormat, route.segmentStarts]);
+    }).toEqual([
+      ['山路 & 测试', '1', 'GPX', [0, 2]],
+      ['编辑后的山路', '1', 'GPX', [0, 3]]
+    ]);
+    const data = JSON.parse(await fs.readFile(path.join(directory, 'storage.json'), 'utf8'));
+    expect(data.routes[0].points[0]).toEqual({ lat: 0.0000001, lon: 114, ele: 0 });
+    expect(data.routes[1].points[1]).toEqual({ lat: 22.005, lon: 114.002, ele: null });
+    expect(data.routes[1].id).not.toBe(data.routes[0].id);
+  } finally {
+    await desktop?.close().catch(() => {});
+    const resolved = await fs.realpath(directory);
+    expect(path.dirname(resolved)).toBe(await fs.realpath(os.tmpdir()));
+    expect(path.basename(resolved)).toMatch(/^veloroute-gpx-exchange-/);
+    await fs.rm(resolved, { recursive: true, force: true, maxRetries: 3 });
+  }
+});

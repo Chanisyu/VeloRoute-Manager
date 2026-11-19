@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 const { randomUUID } = require('crypto');
+const { openGpxStudio } = require('./desktop/gpx-studio.cjs');
 
 let win = null;
 
@@ -168,6 +169,12 @@ ipcMain.handle('load-amap-credentials', event => {
     if (error?.code === 'ENOENT') return null;
   }
   throw new Error('无法读取本机高德地图凭据');
+});
+
+// 路线副本只从可信的主窗口交接，官方编辑器不加载 VeloRoute 的 preload。
+ipcMain.handle('open-gpx-studio', (event, xml) => {
+  if (!trustedSender(event)) throw new Error('拒绝不可信页面的编辑器访问');
+  return openGpxStudio(win, xml);
 });
 
 ipcMain.handle('save-amap-credentials', (event, credentials) => {

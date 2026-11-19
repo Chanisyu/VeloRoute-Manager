@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 高德凭据使用独立固定通道，不通过路线存储或备份读写。
   loadAmapCredentials: () => ipcRenderer.invoke('load-amap-credentials'),
   saveAmapCredentials: (credentials) => ipcRenderer.invoke('save-amap-credentials', credentials),
+  /** @param {string | null} xml 要打开的 GPX 副本内容。 @returns {Promise<object>} 独立编辑窗加载结果。 */
+  openGpxStudio: (xml) => ipcRenderer.invoke('open-gpx-studio', xml),
   /**
    * 注册退出前保存回调，不暴露原始 IPC event，亦不允许指定任意通道。
    * @param {(requestId: string) => void} callback 负责完成当前防抖与在途写入。

@@ -3,6 +3,7 @@ import { Component, inject, signal, computed, output, input, OnInit } from '@ang
 import { RouteService, RouteData, Folder } from '../services/route.service';
 import { FormsModule } from '@angular/forms';
 import { RouteProfileComponent } from './route-profile.component';
+import { createGpxCopy, downloadGpxCopy } from '../services/gpx-exchange';
 
 @Component({
   selector: 'app-management-view',
@@ -22,10 +23,20 @@ import { RouteProfileComponent } from './route-profile.component';
           
           <div class="flex items-center justify-between mb-2">
             <h2 class="text-xl font-bold text-slate-800">路线管理</h2>
+            <div class="flex items-center gap-1">
+              <button (click)="openGpxStudio()" [disabled]="gpxStudioOpening()" title="打开 GPX Studio 编辑器"
+                  class="rounded-md px-2 py-1 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50">GPX Studio</button>
             <button (click)="onSettings.emit()" class="text-slate-500 hover:text-slate-800 p-1.5 rounded-md hover:bg-slate-100 transition-colors" title="设置" aria-label="设置">
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
             </button>
+            </div>
           </div>
+          @if (gpxStudioOpening()) {
+            <p role="status" class="mb-2 text-sm text-slate-600">正在打开 GPX Studio…</p>
+          }
+          @if (gpxStudioError()) {
+            <p role="alert" class="mb-2 text-sm text-red-700">{{ gpxStudioError() }}</p>
+          }
           
           <div class="flex gap-2">
             <input #folderInput type="text" placeholder="请输入文件夹名称" class="flex-1 px-3 py-2 border rounded-md text-sm bg-slate-700 text-white placeholder-slate-400 border-slate-600 focus:outline-none focus:ring-2 focus:ring-slate-500">
@@ -178,6 +189,20 @@ import { RouteProfileComponent } from './route-profile.component';
 
             <!-- Edit Form -->
             <div class="p-8 max-w-3xl mx-auto">
+                <section aria-label="GPX Studio" class="mb-6 space-y-2">
+                  <div class="flex flex-wrap gap-2">
+                    @if (gpxStudioDesktop) {
+                      <button type="button" (click)="openGpxStudio(route)" [disabled]="gpxStudioOpening()"
+                        class="rounded-md bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50">在 GPX Studio 编辑副本</button>
+                    }
+                    <button type="button" (click)="downloadGpx(route)"
+                      class="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">导出 GPX</button>
+                    <button type="button" (click)="editedFile.click()"
+                      class="rounded-md bg-slate-100 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200">导入编辑结果</button>
+                    <input #editedFile type="file" accept=".gpx" class="hidden" (change)="onFileSelected($event, route.folderId)">
+                  </div>
+                  <p class="text-xs text-slate-500">在 GPX Studio 导出后，可将 GPX 导回当前文件夹并保存为新路线。</p>
+                </section>
                 <h3 class="text-lg font-bold text-slate-800 mb-6 border-b pb-2">编辑路线信息</h3>
                 
                 <div class="space-y-6">
@@ -237,6 +262,9 @@ export class ManagementViewComponent implements OnInit {
   
   selectedRouteId = signal<string | null>(null);
   editingFolderId = signal<string | null>(null);
+  protected readonly gpxStudioDesktop = typeof window.electronAPI?.openGpxStudio === 'function';
+  protected readonly gpxStudioOpening = signal(false);
+  protected readonly gpxStudioError = signal('');
 
   selectedRoute = computed(() => 
     this.service.routes().find(r => r.id === this.selectedRouteId()) || null
@@ -290,6 +318,30 @@ export class ManagementViewComponent implements OnInit {
 
   selectRoute(route: RouteData) {
     this.selectedRouteId.set(route.id);
+  }
+
+  /** @param route 要传入编辑器的路线，省略时打开工作区。 @returns 编辑器打开后完成，失败保留本地导出入口。 */
+  protected async openGpxStudio(route?: RouteData): Promise<void> {
+    if (!window.electronAPI?.openGpxStudio) {
+      window.open('https://gpx.studio/zh/app', '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (this.gpxStudioOpening()) return;
+    this.gpxStudioError.set('');
+    this.gpxStudioOpening.set(true);
+    try {
+      const result = await window.electronAPI.openGpxStudio(route ? createGpxCopy(route).xml : null);
+      if (!result.success) this.gpxStudioError.set(result.error);
+    } catch {
+      this.gpxStudioError.set('无法打开 GPX Studio，可导出 GPX 后在官网手动打开。');
+    } finally {
+      this.gpxStudioOpening.set(false);
+    }
+  }
+
+  /** @param route 待导出的路线。 @returns 无返回值；按 GPX 格式下载原始轨迹的副本。 */
+  protected downloadGpx(route: RouteData): void {
+    downloadGpxCopy(createGpxCopy(route));
   }
 
   /** @param event 文件选择事件，允许混选 GPX 与 FIT。 @param folderId 目标文件夹。 @returns 无返回值；清空输入后可以重选同一文件。 */

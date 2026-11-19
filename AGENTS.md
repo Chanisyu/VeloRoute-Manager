@@ -26,6 +26,7 @@
 | `src/component/map-view.component.ts` | 底图、地形、路线图层、文件夹对比。悬停时临时置顶可见的高亮路线，结束后恢复图层添加顺序。右键列表和点击地图线条共用详情入口。 |
 | `src/component/amap-view.component.ts`、`src/amap-frame/index.html` | 高德 JS API 2.0 的宿主与隔离页，固定消息同步可见轨迹、视角与交互。 |
 | `src/component/management-view.component.ts`、`settings-view.component.ts` | 文件夹与路线编辑、GPX/备份导入、Mapbox 设置；组件使用内联模板。 |
+| `desktop/gpx-studio.cjs`、`src/services/gpx-exchange.ts` | 官方 GPX Studio 在线编辑窗与本机轨迹副本交接；独立会话，使用一次性协议 URL，不给编辑器提供 IPC 或磁盘路径。 |
 | `main.js`、`preload.js` | 窗口、文件持久化、`save-data/load-data` IPC；桥接为 `window.electronAPI.saveData/loadData`。 |
 | `GPX_example/`、`FIT_example/`、`Docs/` | 前两者含 GPX 和码表 FIT 样例；`Docs/` 中的历史提示词与功能设想不代表已实现或已授权需求。 |
 
@@ -33,7 +34,7 @@
 
 - 界面统一使用简体中文，Mapbox 控件和桌面菜单亦提供中文；保留品牌、格式名称、单位及底图英文名称（`Outdoors (3D)`、`OpenStreetMap`）。仅首次默认目录、新导入简介使用中文，不批量翻译已有用户名称或简介，也不更改 JSON 字段名。`shared/user-messages.mjs` 统一平台错误的中文说明。
 - `RouteData` 保存 UUID、所属 `folderId`、名称/描述、`points`、`segmentStarts`、`stats`、`sourceFormat`、颜色及显隐。点为 `{lat, lon, ele}`，高程缺失为 null；GeoJSON 使用 `[lon, lat]`，已知分段绘制为 MultiLineString。删除文件夹会连同路线删除。
-- GPX 保留原始点序及 trkseg 边界，不保留 XML、时间或扩展字段，不支持 rtept/wpt。统计 v1 按20m RDP关键轮廓及±100m趋势残差平滑累计升降；均值为距离加权上坡坡度，最大坡度为完整100m窗口。跨分段/长缺口不求最大坡度，无50%硬截断；数据不足用null。原始点不被滤波覆盖。
+- GPX 导入保留原始点序和 trkseg、rte 边界，读取 trkpt/rtept，不导入 wpt，不保留 XML、时间和扩展字段。编辑器导回走相同导入流程并新增路线。统计 v1 按20m RDP关键轮廓及±100m趋势残差平滑累计升降；均值为距离加权上坡坡度，最大坡度为完整100m窗口。跨分段/长缺口不求最大坡度，无50%硬截断；数据不足用null。原始点不被滤波覆盖。
 - FIT 保存有效定位点及高程，优先使用增强高程。缺定位、计时启停与后续会话起点切分轨迹。四项高程指标读取会话汇总，缺项为 null，不从逐点高程或坡度重算。新版保存 `stats.source: 'fit-session'`，与 `algorithmVersion` 互斥。
 - 历史统计保留原值，旧 FIT 需重新导入原文件才能读取码表汇总。路线详情的“最大坡度”在 GPX 指最大100米平均上坡坡度，在 FIT 指设备汇总的最大上坡坡度。解释集中在设置页默认折叠的“路线统计与计算说明”。
 - 剖面按原始高程绘制并保留分段，缺高程处断开且不显示提示。悬停20m坡度使用同一有效区间内前后各10m的插值高差；不足完整窗口省略该字段，不沿用顶部100m最大坡度的间距筛选规则。缩放/拖动不保存、不改原始数据。

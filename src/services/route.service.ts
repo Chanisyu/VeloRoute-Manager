@@ -22,6 +22,7 @@ interface ElectronAPI {
   loadData: () => Promise<LoadResult>;
   loadAmapCredentials: () => Promise<AmapCredentials | null>;
   saveAmapCredentials: (credentials: AmapCredentials | null) => Promise<void>;
+  openGpxStudio: (xml: string | null) => Promise<SaveResult>;
   onPrepareClose: (callback: (requestId: string) => void) => void;
   completeClose: (requestId: string, success: boolean) => void;
 }
@@ -467,7 +468,7 @@ export class RouteService {
   }
 
   /**
-   * 严格解析 GPX 的直接 trk/trkseg/trkpt 子节点，按保留的点序和分段计算 GPX 统计。
+   * 解析 GPX 的直接 trk/trkseg/trkpt 与 rte/rtept 子节点，保留点序及分段边界。
    * @param text 原始 XML 文本，不执行其中任何内容。
    * @returns 至少两个轨迹点、原始分段和 GPX 统计；非法 XML、字段或不支持的格式抛错。
    */
@@ -484,15 +485,35 @@ export class RouteService {
       return Number(value);
     };
     const points: RoutePoint[] = []; const segmentStarts: number[] = [];
-    for (const track of Array.from(xml.documentElement.children).filter(node => node.localName === 'trk')) {
-      for (const segment of Array.from(track.children).filter(node => node.localName === 'trkseg')) {
-        const trackpoints = Array.from(segment.children).filter(node => node.localName === 'trkpt');
-        if (!trackpoints.length) continue;
-        segmentStarts.push(points.length);
-        for (const point of trackpoints) {
-          const ele = Array.from(point.children).find(node => node.localName === 'ele')?.textContent?.trim();
-          points.push({ lat: number(point.getAttribute('lat')), lon: number(point.getAttribute('lon')), ele: ele ? number(ele) : null });
+    const garminRouteNamespace = 'http://www.garmin.com/xmlschemas/GpxExtensions/v3';
+    /** @param point 轨迹点、路线点或 Garmin 路线内插点。 @returns 无返回值；仅使用点自身给出的高程。 */
+    const appendPoint = (point: Element): void => {
+      const ele = Array.from(point.children).find(node => node.localName === 'ele')?.textContent?.trim();
+      points.push({ lat: number(point.getAttribute('lat')), lon: number(point.getAttribute('lon')), ele: ele ? number(ele) : null });
+    };
+    /** @param segment 原始轨迹分段或一条 GPX 路线。 @param pointTag 该容器允许的直接点元素。 @returns 无返回值；空容器不新增分段。 */
+    const append = (segment: Element, pointTag: 'trkpt' | 'rtept'): void => {
+      const segmentPoints = Array.from(segment.children).filter(node => node.localName === pointTag);
+      if (!segmentPoints.length) return;
+      segmentStarts.push(points.length);
+      for (const point of segmentPoints) {
+        appendPoint(point);
+        if (pointTag === 'rtept') {
+          // GPX Studio 把两个锚点之间的详细形状保存在 Garmin RoutePointExtension 中。
+          const extensions = Array.from(point.children).find(node => node.localName === 'extensions');
+          const shape = Array.from(extensions?.children ?? []).find(node =>
+            node.namespaceURI === garminRouteNamespace && node.localName === 'RoutePointExtension');
+          for (const detail of Array.from(shape?.children ?? [])) {
+            if (detail.namespaceURI === garminRouteNamespace && detail.localName === 'rpt') appendPoint(detail);
+          }
         }
+      }
+    };
+    for (const item of Array.from(xml.documentElement.children)) {
+      // GPX Studio 既能导出轨迹也能导出路线文件；每个 rte 独立，避免虚构连接线。
+      if (item.localName === 'rte') append(item, 'rtept');
+      if (item.localName === 'trk') {
+        for (const segment of Array.from(item.children).filter(node => node.localName === 'trkseg')) append(segment, 'trkpt');
       }
     }
     if (points.length < 2) throw new Error('轨迹至少需要两个轨迹点。');
